@@ -22,18 +22,17 @@ import kotlin.math.abs
  */
 class MediaActionsActivity : AppCompatActivity() {
     companion object {
+        /**
+         * Extractor params
+         */
         private val SDCARD_PATH: String = Environment.getExternalStorageDirectory().path
         private val INPUT_FILE = SDCARD_PATH + File.separator + "input.mp4"
         private val OUTPUT_VIDEO_FILE = SDCARD_PATH + File.separator + "output.mp4"
         private val OUTPUT_AUDIO_FILE = SDCARD_PATH + File.separator + "output"
-
-
-        // Field for MediaCodec
-
-
     }
 
-    lateinit var mMediaExtractor: MediaExtractor
+    private lateinit var mMediaExtractor: MediaExtractor
+
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,19 +66,7 @@ class MediaActionsActivity : AppCompatActivity() {
         }
 
 
-        codecVideo.setOnClickListener {
-            codecVideo()
-        }
-
     }
-
-    /**
-     * MediaCodec使用Demo
-     */
-    private fun codecVideo(){
-
-    }
-
 
     /**
      * 全关键帧视频合成倒放视频
@@ -237,20 +224,20 @@ class MediaActionsActivity : AppCompatActivity() {
     /**
      * 根据MIME提取音频轨道可以播放
      */
-    private fun extractorAudio(){
+    private fun extractorAudio() {
         Log.e("ExtractorAudio", " onStart")
         mMediaExtractor = MediaExtractor()
         mMediaExtractor.setDataSource(INPUT_FILE)
         var audioIndex = -1
-        for (i in 0 until mMediaExtractor.trackCount){
+        for (i in 0 until mMediaExtractor.trackCount) {
             val mediaFormat = mMediaExtractor.getTrackFormat(i)
             val mime = mediaFormat.getString(MediaFormat.KEY_MIME)
-            if (mime.startsWith("audio/")){
+            if (mime.startsWith("audio/")) {
                 audioIndex = i
                 break
             }
         }
-        if (audioIndex == -1){
+        if (audioIndex == -1) {
             return
         }
         val audioMediaFormat = mMediaExtractor.getTrackFormat(audioIndex)
@@ -287,9 +274,9 @@ class MediaActionsActivity : AppCompatActivity() {
         mMediaExtractor.unselectTrack(audioIndex)
         mMediaExtractor.selectTrack(audioIndex)
 //        var i = 0
-        while (true){
+        while (true) {
             val readSapmle = mMediaExtractor.readSampleData(byteBuffer, 0)
-            if (readSapmle < 0){
+            if (readSapmle < 0) {
                 break
             }
             mMediaExtractor.advance()
