@@ -306,6 +306,9 @@ class MediaCodecActivity : AppCompatActivity() {
                 }
                 break
             }
+            /**
+             * Poll frames from the video encoder and send them to muxer.
+             */
         }
 
     }
