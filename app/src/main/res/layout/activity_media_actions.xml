@@ -7,24 +7,24 @@
               android:orientation="vertical">
 
     <Button
-            android:id="@+id/exactor"
+            android:id="@+id/extractorAudioAndVideo"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="分离"/>
 
     <Button
-            android:id="@+id/muxer"
+            android:id="@+id/extractorVideo"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="分离视频"/>
 
     <Button
-            android:id="@+id/muxer_audio"
+            android:id="@+id/extractorAudio"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="分离音频"/>
 
-    <Button android:id="@+id/combine_video"
+    <Button android:id="@+id/combineVideo"
             android:layout_height="wrap_content"
             android:layout_width="wrap_content"
             android:text="合成视频"/>

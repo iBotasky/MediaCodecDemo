@@ -14,6 +14,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
+import kotlin.math.abs
+
 
 /**
  * Created by liangbo.su@ubnt on 2019-07-04
@@ -23,7 +25,7 @@ class MediaActionsActivity : AppCompatActivity() {
         private val SDCARD_PATH: String = Environment.getExternalStorageDirectory().path
         private val INPUT_FILE = SDCARD_PATH + File.separator + "input.mp4"
         private val OUTPUT_VIDEO_FILE = SDCARD_PATH + File.separator + "output.mp4"
-        private val OUTPUT_AUDIO_FILE = SDCARD_PATH + File.separator + "output.m4a"
+        private val OUTPUT_AUDIO_FILE = SDCARD_PATH + File.separator + "output"
     }
 
     lateinit var mMediaExtractor: MediaExtractor
@@ -33,21 +35,25 @@ class MediaActionsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_media_actions)
 
-        exactor.setOnClickListener {
+        extractorAudioAndVideo.setOnClickListener {
             AsyncTask.THREAD_POOL_EXECUTOR.execute {
                 extractorMedia()
             }
         }
 
-        muxer.setOnClickListener {
+        extractorVideo.setOnClickListener {
             AsyncTask.THREAD_POOL_EXECUTOR.execute {
                 extractorVideo()
             }
         }
 
-        muxer_audio.setOnClickListener { }
+        extractorAudio.setOnClickListener {
+            AsyncTask.THREAD_POOL_EXECUTOR.execute {
+                extractorAudio()
+            }
+        }
 
-        combine_video.setOnClickListener { }
+        combineVideo.setOnClickListener { }
 
         muxerPlayBackVideo.setOnClickListener {
             AsyncTask.THREAD_POOL_EXECUTOR.execute {
@@ -161,6 +167,7 @@ class MediaActionsActivity : AppCompatActivity() {
      * 根据MIME提取视频轨道，可以播放
      */
     private fun extractorVideo() {
+        mMediaExtractor = MediaExtractor()
         mMediaExtractor.setDataSource(INPUT_FILE)
         var videoTrackIndex = -1 // 原始视频的视频轨道index
 
@@ -215,6 +222,7 @@ class MediaActionsActivity : AppCompatActivity() {
      * 根据MIME分离音频轨跟视频轨， 都不能播放
      */
     private fun extractorMedia() {
+        mMediaExtractor = MediaExtractor()
         var videoOutputStream: FileOutputStream? = null
         var audioOutputStream: FileOutputStream? = null
 
@@ -289,6 +297,80 @@ class MediaActionsActivity : AppCompatActivity() {
             videoOutputStream?.close()
             audioOutputStream?.close()
         }
+    }
+
+    /**
+     * 分离音频
+     */
+    private fun extractorAudio(){
+        Log.e("ExtractorAudio", " onStart")
+        mMediaExtractor = MediaExtractor()
+        mMediaExtractor.setDataSource(INPUT_FILE)
+        var audioIndex = -1
+        for (i in 0 until mMediaExtractor.trackCount){
+            val mediaFormat = mMediaExtractor.getTrackFormat(i)
+            val mime = mediaFormat.getString(MediaFormat.KEY_MIME)
+            if (mime.startsWith("audio/")){
+                audioIndex = i
+                break
+            }
+        }
+        if (audioIndex == -1){
+            return
+        }
+        val audioMediaFormat = mMediaExtractor.getTrackFormat(audioIndex)
+        mMediaExtractor.selectTrack(audioIndex)
+        val muxer = MediaMuxer(OUTPUT_AUDIO_FILE, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val writeAudioIndex = muxer.addTrack(audioMediaFormat)
+        muxer.start()
+
+        val byteBuffer = ByteBuffer.allocate(500 * 1024)
+        val bufferInfo = MediaCodec.BufferInfo()
+
+        var sampleTime: Long = 0
+        mMediaExtractor.readSampleData(byteBuffer, 0)
+        if (mMediaExtractor.sampleFlags == MediaExtractor.SAMPLE_FLAG_SYNC) {
+            mMediaExtractor.advance()
+        }
+        mMediaExtractor.readSampleData(byteBuffer, 0)
+        val firstTime = mMediaExtractor.sampleTime
+        mMediaExtractor.advance()
+        val secondeTime = mMediaExtractor.sampleTime
+        sampleTime = abs(secondeTime - firstTime)
+
+        //TODO to make time correct then sampleTime
+//        val audioTimes = ArrayList<Long>()
+//        while (true){
+//            val readSampleSize = mMediaExtractor.readSampleData(byteBuffer, 0)
+//            if (readSampleSize < 0){
+//                break
+//            }
+//            audioTimes.add(mMediaExtractor.sampleTime)
+//            mMediaExtractor.advance()
+//        }
+//
+        mMediaExtractor.unselectTrack(audioIndex)
+        mMediaExtractor.selectTrack(audioIndex)
+//        var i = 0
+        while (true){
+            val readSapmle = mMediaExtractor.readSampleData(byteBuffer, 0)
+            if (readSapmle < 0){
+                break
+            }
+            mMediaExtractor.advance()
+            bufferInfo.size = readSapmle
+            bufferInfo.flags = mMediaExtractor.sampleFlags
+            bufferInfo.offset = 0
+//            bufferInfo.presentationTimeUs = audioTimes[i]
+            bufferInfo.presentationTimeUs += sampleTime
+//            i++
+            muxer.writeSampleData(writeAudioIndex, byteBuffer, bufferInfo)
+        }
+
+        muxer.stop()
+        muxer.release()
+        mMediaExtractor.release()
+        Log.e("ExtractorAudio", " onFinish")
     }
 
 }
