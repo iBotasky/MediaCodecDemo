@@ -32,7 +32,13 @@
     <Button
             android:id="@+id/muxerPlayBackVideo"
             android:layout_width="wrap_content"
-            android:text="合成倒放视频"
+            android:text="关键帧视频倒放视频"
             android:layout_height="wrap_content"/>
+    <Button
+            android:id="@+id/codecVideo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="编解码"/>
+
 
 </LinearLayout>
