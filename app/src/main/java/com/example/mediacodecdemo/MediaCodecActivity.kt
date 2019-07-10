@@ -1,21 +1,15 @@
 package com.example.mediacodecdemo
 
-import android.media.MediaCodecInfo
-import android.media.MediaExtractor
-import android.media.MediaFormat
+import android.media.*
 import android.os.AsyncTask
 import android.os.Bundle
 import android.os.Environment
 import android.util.Log
+import android.view.Surface
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.activity_media_codec.*
 import java.io.File
 import java.io.IOException
-import android.media.MediaCodecList
-import android.media.MediaCodec
-import android.R.attr.configure
-import android.media.MediaMuxer
-import android.view.Surface
 import java.util.concurrent.atomic.AtomicReference
 
 
@@ -36,7 +30,7 @@ class MediaCodecActivity : AppCompatActivity() {
         /**
          * MediaCodec params
          */
-        const val TIMEOUT_USEC = 1000 //how long to wait for the next buffer to become available
+        const val TIMEOUT_USEC = 1000L //how long to wait for the next buffer to become available
         /**
          * Params for the video encoder
          */
@@ -65,7 +59,7 @@ class MediaCodecActivity : AppCompatActivity() {
     /**
      * Whether to copy the video from the test video.
      */
-    private var mCopyVideo = false
+    private var mCopyVideo = true
 
     /**
      * Whether to copy the audio from the test audio.
@@ -123,13 +117,13 @@ class MediaCodecActivity : AppCompatActivity() {
         }
         if (mHeight != -1) {
             videoInputFormat.setInteger(MediaFormat.KEY_HEIGHT, mHeight)
-        }else{
+        } else {
             mHeight = videoInputFormat.getInteger(MediaFormat.KEY_HEIGHT)
         }
         Log.e(TAG, "video match input format:$videoInputFormat")
 
         val videoCodecInfo = selectCodec(OUTPUT_VIDEO_MIME_TYPE)
-        if (videoCodecInfo == null){
+        if (videoCodecInfo == null) {
             Log.e(TAG, "Unable to find an appropriate codec for :$OUTPUT_VIDEO_MIME_TYPE")
             return
         }
@@ -147,6 +141,172 @@ class MediaCodecActivity : AppCompatActivity() {
 
         // Create muxer
         val muxer = createMuxer()
+
+    }
+
+    /**
+     * Does the actual work for extracting, decoding, encoding and muxing.
+     * Here we just codec the video
+     */
+    private fun doExtractorDecodeEncodeMux(
+        videoExtractor: MediaExtractor,
+        videoDecoder: MediaCodec,
+        videoEncoder: MediaCodec,
+        muxer: MediaMuxer
+    ) {
+        var videoDecoderInputBuffers = videoDecoder.inputBuffers
+        var videoDecoderOutputBuffers = videoDecoder.outputBuffers
+
+        val videoEncoderInputBuffers = videoEncoder.inputBuffers
+        val videoEncoderOutputBuffers = videoEncoder.outputBuffers
+
+        val videoDecoderOutputBufferInfo = MediaCodec.BufferInfo()
+        val videoEncoderOutputBufferInfo = MediaCodec.BufferInfo()
+
+        // We will get these from the decoders when notified a format change.
+        var decoderOutputVideoFormat: MediaFormat? = null
+        var encoderOutputVideoFormat: MediaFormat? = null
+        // We will determine these once we have the output format.
+        var outputVideoTrack = -1
+        // Whether things are done on the video side
+        var videoExtractorDone = false
+        var videoDecoderDone = false
+        var videoEncoderDone = false
+        // The video decoder output buffer to process, -1 if none.
+        var pendingVideoDecoderOutputBufferIndex = -1
+
+        var muxing = false
+
+        var videoExtractedFrameCount = 0
+        var videoDecodedFrameCount = 0
+        var videoEncodedFrameCount = 0
+
+        var mVideoConfig = false
+        var mainVideoFrame = false
+        var mLatVideoSampleTime = 0L
+        var mVideoSampleTime = 0L
+
+        while (!interrupted && !videoEncoderDone) {
+            /**
+             * Extractor video from file and feed to decoder
+             * Do not extractor video if we have determined the output format
+             * but we are not yet ready to mux the frames
+             */
+            while (!videoExtractorDone && (encoderOutputVideoFormat == null || muxing)) {
+                val decoderInputBufferIndex = videoDecoder.dequeueInputBuffer(TIMEOUT_USEC)
+                if (decoderInputBufferIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    Log.e(TAG, "no video decoder input buffer:$decoderInputBufferIndex")
+                    break
+                }
+
+                Log.e(TAG, "video decoder dequeueInputBuffer returned input buffer:$decoderInputBufferIndex")
+                val decoderInputBuffer = videoDecoderInputBuffers[decoderInputBufferIndex]
+                val size = videoExtractor.readSampleData(decoderInputBuffer, 0)
+                if (videoExtractor.sampleFlags == MediaExtractor.SAMPLE_FLAG_SYNC) {
+                    Log.e(TAG, " video decoder SAMPLE_FLAG_SYNC ")
+                }
+                val presentationTime = videoExtractor.sampleTime
+                Log.e(TAG, "video extractor returned buffer of size:$size , time:$presentationTime")
+
+                if (size > 0) {
+                    videoDecoder.queueInputBuffer(
+                        decoderInputBufferIndex,
+                        0,
+                        size,
+                        presentationTime,
+                        videoExtractor.sampleFlags
+                    )
+                }
+                videoExtractorDone = !videoExtractor.advance()
+
+                if (videoExtractorDone) {
+                    Log.e(TAG, "video extractor: EOS")
+                    videoDecoder.queueInputBuffer(
+                        decoderInputBufferIndex,
+                        0,
+                        0,
+                        0,
+                        MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                    )
+                }
+                // We extracted a frame, let's try something else next.
+                videoExtractedFrameCount++
+            }
+
+            /**
+             * Poll output frames from the video decoder and feed the encoder.
+             */
+            while (!videoDecoderDone && pendingVideoDecoderOutputBufferIndex == -1 && (encoderOutputVideoFormat == null || muxing)) {
+                val decoderOutputBufferIndex =
+                    videoDecoder.dequeueOutputBuffer(videoDecoderOutputBufferInfo, TIMEOUT_USEC)
+
+                if (decoderOutputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    Log.e(TAG, "no video decoder output buffer")
+                    break
+                } else if (decoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    decoderOutputVideoFormat = videoDecoder.outputFormat
+                    Log.e(TAG, "video decoder: output fromat changed:$decoderOutputVideoFormat")
+                    break
+                } else if (decoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    Log.e(TAG, "video decoder: output buffers changed")
+                    videoDecoderOutputBuffers = videoDecoder.getOutputBuffers()
+                    break
+                }
+
+                Log.e(
+                    TAG,
+                    "video decoder returned output buffer:$decoderOutputBufferIndex size:${videoDecoderOutputBufferInfo.size}"
+                )
+                if ((videoDecoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                    Log.e(TAG, "video decoder: codec config buffer")
+                    videoDecoder.releaseOutputBuffer(decoderOutputBufferIndex, false)
+                    break
+                }
+                Log.e(TAG, "video decoder: returned buffer for time:${videoDecoderOutputBufferInfo.presentationTimeUs}")
+
+                pendingVideoDecoderOutputBufferIndex = decoderOutputBufferIndex
+                videoDecodedFrameCount++
+            }
+
+            /**
+             * Feed the pending decode audio buffer to the video encoder.
+             */
+            while (pendingVideoDecoderOutputBufferIndex != -1) {
+                Log.e(TAG, "video decoder: attempting to process pending buffer:$pendingVideoDecoderOutputBufferIndex")
+                val encoderInputBufferIndex = videoEncoder.dequeueInputBuffer(TIMEOUT_USEC)
+                if (encoderInputBufferIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    Log.e(TAG, "no video encoder input buffer:$encoderInputBufferIndex")
+                    break
+                }
+                Log.e(TAG, "video encoder returned input buffer:$encoderInputBufferIndex")
+
+                val encoderInputBuffer = videoEncoderInputBuffers[encoderInputBufferIndex]
+                val size = videoDecoderOutputBufferInfo.size
+                val presentationTime = videoDecoderOutputBufferInfo.presentationTimeUs
+                Log.e(
+                    TAG,
+                    "video decoder processing pending buffer:$pendingVideoDecoderOutputBufferIndex size:$size time:$presentationTime"
+                )
+                if (size >= 0) {
+                    val decoderOutputBuffer = videoDecoderOutputBuffers[pendingVideoDecoderOutputBufferIndex].duplicate()
+                    decoderOutputBuffer.position(videoDecoderOutputBufferInfo.offset)
+                    decoderOutputBuffer.limit(videoDecoderOutputBufferInfo.offset + size)
+
+                    encoderInputBuffer.position(0)
+                    encoderInputBuffer.put(decoderOutputBuffer)
+
+                    videoEncoder.queueInputBuffer(encoderInputBufferIndex,0, size, presentationTime, videoDecoderOutputBufferInfo.flags)
+                }
+
+                videoDecoder.releaseOutputBuffer(pendingVideoDecoderOutputBufferIndex, false)
+                pendingVideoDecoderOutputBufferIndex = -1
+                if ((videoDecoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0){
+                    Log.e(TAG, "video decoder: EOS")
+                    videoDecoderDone = true
+                }
+                break
+            }
+        }
 
     }
 
@@ -221,6 +381,7 @@ class MediaCodecActivity : AppCompatActivity() {
         decoder.start()
         return decoder
     }
+
     /**
      * Creates an encoder for the given format using the specified codec, taking
      * input from a surface.
@@ -247,7 +408,6 @@ class MediaCodecActivity : AppCompatActivity() {
         encoder.start()
         return encoder
     }
-
 
     /**
      * Creates a muxer to write the encoded frames. The muxer is not started as
