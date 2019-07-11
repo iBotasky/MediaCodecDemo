@@ -34,26 +34,13 @@ class MediaCodecActivity : AppCompatActivity() {
         /**
          * Params for the video encoder
          */
-        const val OUTPUT_VIDEO_MIME_TYPE = "video/acv"  // H.264 Advanced Video Coding
-        const val OUTPUT_VIDEO_BIT_RATE = 512 * 1024    // 512 kbps maybe better
-        const val OUTPUT_VIDEO_FRAME_RATE = 25          // 25 fps
+        const val OUTPUT_VIDEO_MIME_TYPE = "video/avc"  // H.264 Advanced Video Coding
+        const val OUTPUT_VIDEO_BIT_RATE = 1024 * 1024 * 10    // 512 kbps maybe better
+        const val OUTPUT_VIDEO_FRAME_RATE = 30          // 25 fps
         const val OUTPUT_VIDEO_IFRAME_INTERVAL = 10     // 10 seconds between I-Frames
         const val OUTPUT_VIDEO_COLOR_FORMAT =
             MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible // MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar is deprecated
-        /**
-         * Params for the audio encoder
-         */
-        const val OUTPUT_AUDIO_TYPE = "audio/mp4a-latm" // Advanced Audio  Coding
-        const val OUTPUT_AUDIO_BIT_RATE = 64 * 1024     // 64 kbps
-        const val OUTPUT_AUDIO_AAC_PROFILE = MediaCodecInfo.CodecProfileLevel.AACObjectLC // better then AACObjectHE?
-        /**
-         * Params for the audio encoder config from input stream
-         */
-        const val OUTPUT_AUDIO_CHANNEL_COUNT = 1       // Must match the input stream. can not config
-        const val OUTPUT_AUDIO_SAMPLE_RATE = 48000      // Must match the imput stream. can not config
 
-
-        const val VERBOSE = true
     }
 
     /**
@@ -93,7 +80,7 @@ class MediaCodecActivity : AppCompatActivity() {
         setContentView(R.layout.activity_media_codec)
         mediaCodec.setOnClickListener {
             AsyncTask.THREAD_POOL_EXECUTOR.execute {
-
+                extractorDecoderEncoderMux()
             }
         }
     }
@@ -105,9 +92,12 @@ class MediaCodecActivity : AppCompatActivity() {
         val videoExtractor = createExtractor()
         // Get video track index
         val videoInputTrack = getAndSelectVideoTrackIndex(videoExtractor)
+        videoExtractor.selectTrack(videoInputTrack)
         Log.e(TAG, "video track index:$videoInputTrack")
         // Get video format, and make sure decode buffer size equals encode buffer size
         val videoInputFormat = videoExtractor.getTrackFormat(videoInputTrack)
+//        Log.e("ColorFormat", " in track:${videoInputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT)}")
+
         Log.e(TAG, "video track fromat:$videoInputFormat")
         videoInputFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, OUTPUT_VIDEO_COLOR_FORMAT)
         if (mWidth != -1) {
@@ -128,11 +118,20 @@ class MediaCodecActivity : AppCompatActivity() {
             return
         }
 
+        Log.e(TAG,"mWidth:$mWidth mHeight:$mHeight size:${mWidth * mHeight * 4}")
+//        val videoOutputFormat = MediaFormat.createVideoFormat(OUTPUT_VIDEO_MIME_TYPE, mWidth, mHeight)
+//        videoOutputFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, videoInputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT))
+//        videoOutputFormat.setInteger(MediaFormat.KEY_BIT_RATE, mWidth * mHeight * videoInputFormat.getInteger(MediaFormat.KEY_FRAME_RATE) / 8)
+//        videoOutputFormat.setInteger(MediaFormat.KEY_FRAME_RATE, videoInputFormat.getInteger(MediaFormat.KEY_FRAME_RATE))
+//        videoOutputFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, OUTPUT_VIDEO_IFRAME_INTERVAL)
+//        videoOutputFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, mWidth * mHeight * 4)
+
         val videoOutputFormat = MediaFormat.createVideoFormat(OUTPUT_VIDEO_MIME_TYPE, mWidth, mHeight)
         videoOutputFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, OUTPUT_VIDEO_COLOR_FORMAT)
         videoOutputFormat.setInteger(MediaFormat.KEY_BIT_RATE, OUTPUT_VIDEO_BIT_RATE)
         videoOutputFormat.setInteger(MediaFormat.KEY_FRAME_RATE, OUTPUT_VIDEO_FRAME_RATE)
         videoOutputFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, OUTPUT_VIDEO_IFRAME_INTERVAL)
+        videoOutputFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, mWidth * mHeight * 4)
         Log.e(TAG, "video encoder format:$videoOutputFormat")
 
         // Create encoder by videoOutpuFormat and create decoder by videoInputFormat
@@ -188,6 +187,7 @@ class MediaCodecActivity : AppCompatActivity() {
         var mLastVideoSampleTime = 0L
         var mVideoSampleTime = 0L
 
+
         while (!interrupted && !videoEncoderDone) {
             /**
              * Extractor video from file and feed to decoder
@@ -195,21 +195,26 @@ class MediaCodecActivity : AppCompatActivity() {
              * but we are not yet ready to mux the frames
              */
             while (!videoExtractorDone && (encoderOutputVideoFormat == null || muxing)) {
+                // 获取空闲缓冲区位置
                 val decoderInputBufferIndex = videoDecoder.dequeueInputBuffer(TIMEOUT_USEC)
                 if (decoderInputBufferIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
                     Log.e(TAG, "no video decoder input buffer:$decoderInputBufferIndex")
                     break
                 }
-
+                // 获取空闲缓冲区Buffer
                 Log.e(TAG, "video decoder dequeueInputBuffer returned input buffer:$decoderInputBufferIndex")
-                val decoderInputBuffer = videoDecoderInputBuffers[decoderInputBufferIndex]
+                val decoderInputBuffer = videoDecoder.getInputBuffer(decoderInputBufferIndex)
+                // 往空闲缓冲区塞Video的数据
                 val size = videoExtractor.readSampleData(decoderInputBuffer, 0)
                 if (videoExtractor.sampleFlags == MediaExtractor.SAMPLE_FLAG_SYNC) {
                     Log.e(TAG, " video decoder SAMPLE_FLAG_SYNC ")
                 }
                 val presentationTime = videoExtractor.sampleTime
-                Log.e(TAG, "video extractor returned buffer of size:$size , time:$presentationTime")
-
+                Log.e(
+                    TAG,
+                    "video extractor returned buffer of size:$size , time:$presentationTime flags:${videoExtractor.sampleFlags}"
+                )
+                //  video的size正确，就解码该index的缓冲区的视频数据
                 if (size > 0) {
                     videoDecoder.queueInputBuffer(
                         decoderInputBufferIndex,
@@ -219,8 +224,9 @@ class MediaCodecActivity : AppCompatActivity() {
                         videoExtractor.sampleFlags
                     )
                 }
-                videoExtractorDone = !videoExtractor.advance()
 
+                // 定位到下一帧，如果是结束帧，就添加结束帧数据
+                videoExtractorDone = !videoExtractor.advance()
                 if (videoExtractorDone) {
                     Log.e(TAG, "video extractor: EOS")
                     videoDecoder.queueInputBuffer(
@@ -239,6 +245,7 @@ class MediaCodecActivity : AppCompatActivity() {
              * Poll output frames from the video decoder and feed the encoder.
              */
             while (!videoDecoderDone && pendingVideoDecoderOutputBufferIndex == -1 && (encoderOutputVideoFormat == null || muxing)) {
+                // 获取Decoder解码出来的数据在缓存区的位置, 解码数据存入videoDecoderOutputbufferInfo里面, 解码的buffer缓冲区在Decoder的decoderOutputBufferIndex中，
                 val decoderOutputBufferIndex =
                     videoDecoder.dequeueOutputBuffer(videoDecoderOutputBufferInfo, TIMEOUT_USEC)
 
@@ -247,6 +254,8 @@ class MediaCodecActivity : AppCompatActivity() {
                     break
                 } else if (decoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     decoderOutputVideoFormat = videoDecoder.outputFormat
+
+                    Log.e("ColorFormat", " in track:${decoderOutputVideoFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT)}")
                     Log.e(TAG, "video decoder: output fromat changed:$decoderOutputVideoFormat")
                     break
                 } else if (decoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
@@ -259,6 +268,7 @@ class MediaCodecActivity : AppCompatActivity() {
                     TAG,
                     "video decoder returned output buffer:$decoderOutputBufferIndex size:${videoDecoderOutputBufferInfo.size}"
                 )
+                Log.e(TAG, "videoDecoderOutputBuffer.flags:${videoDecoderOutputBufferInfo.flags}")
                 if ((videoDecoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
                     Log.e(TAG, "video decoder: codec config buffer")
                     videoDecoder.releaseOutputBuffer(decoderOutputBufferIndex, false)
@@ -266,6 +276,7 @@ class MediaCodecActivity : AppCompatActivity() {
                 }
                 Log.e(TAG, "video decoder: returned buffer for time:${videoDecoderOutputBufferInfo.presentationTimeUs}")
 
+                //赋值decoder解码缓冲区index到pendingVideoDecoderOutputBufferIndex
                 pendingVideoDecoderOutputBufferIndex = decoderOutputBufferIndex
                 videoDecodedFrameCount++
             }
@@ -274,30 +285,36 @@ class MediaCodecActivity : AppCompatActivity() {
              * Feed the pending decode audio buffer to the video encoder.
              */
             while (pendingVideoDecoderOutputBufferIndex != -1) {
+                //获取Encoder空闲的缓冲区Index，encoderInputBufferIndex
                 Log.e(TAG, "video decoder: attempting to process pending buffer:$pendingVideoDecoderOutputBufferIndex")
+
                 val encoderInputBufferIndex = videoEncoder.dequeueInputBuffer(TIMEOUT_USEC)
                 if (encoderInputBufferIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
                     Log.e(TAG, "no video encoder input buffer:$encoderInputBufferIndex")
                     break
                 }
                 Log.e(TAG, "video encoder returned input buffer:$encoderInputBufferIndex")
-
+                // 获取Encoder空闲的缓冲区index指向的缓冲区
                 val encoderInputBuffer = videoEncoderInputBuffers[encoderInputBufferIndex]
+                // 通过videoDecoderOutputBuffer获取size，跟presentationTime
                 val size = videoDecoderOutputBufferInfo.size
                 val presentationTime = videoDecoderOutputBufferInfo.presentationTimeUs
                 Log.e(
                     TAG,
                     "video decoder processing pending buffer:$pendingVideoDecoderOutputBufferIndex size:$size time:$presentationTime"
                 )
+                // 如果数据正确，就把当前的decoderOutputBuffer 放入对应的空闲的EncoderInputBufferindex的编码缓冲\
+                // 区
                 if (size >= 0) {
                     val decoderOutputBuffer =
-                        videoDecoderOutputBuffers[pendingVideoDecoderOutputBufferIndex].duplicate()
+                        videoDecoder.getOutputBuffer(pendingVideoDecoderOutputBufferIndex)!!.duplicate()
                     decoderOutputBuffer.position(videoDecoderOutputBufferInfo.offset)
                     decoderOutputBuffer.limit(videoDecoderOutputBufferInfo.offset + size)
-
-                    encoderInputBuffer.position(0)
+                    Log.e("BufferOver", " decoderPosition:${decoderOutputBuffer.position()}  limit:${decoderOutputBuffer.limit()} encoderInput:${encoderInputBuffer.limit()}")
+                    encoderInputBuffer.clear()
+                    // endcoderInputbuffer 存入VideoDecoder解码完的buffer数据，
                     encoderInputBuffer.put(decoderOutputBuffer)
-
+                    // 开始往编码器塞入要编码的已经解完码的buffer数据，进行编码
                     videoEncoder.queueInputBuffer(
                         encoderInputBufferIndex,
                         0,
@@ -306,7 +323,7 @@ class MediaCodecActivity : AppCompatActivity() {
                         videoDecoderOutputBufferInfo.flags
                     )
                 }
-
+                // 释放decoder的缓冲区
                 videoDecoder.releaseOutputBuffer(pendingVideoDecoderOutputBufferIndex, false)
                 pendingVideoDecoderOutputBufferIndex = -1
                 if ((videoDecoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
@@ -319,6 +336,7 @@ class MediaCodecActivity : AppCompatActivity() {
              * Poll frames from the video encoder and send them to muxer.
              */
             while (!videoEncoderDone && (encoderOutputVideoFormat == null || muxing)) {
+                // 获取Encoder中编码完的缓冲区index
                 val encoderOutputBufferIndex =
                     videoEncoder.dequeueOutputBuffer(videoEncoderOutputBufferInfo, TIMEOUT_USEC)
                 if (encoderOutputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
@@ -330,6 +348,15 @@ class MediaCodecActivity : AppCompatActivity() {
                         Log.e(TAG, "video encoder changed its output format again")
                     }
                     encoderOutputVideoFormat = videoEncoder.outputFormat
+                    if (encoderOutputVideoFormat.containsKey(MediaFormat.KEY_COLOR_FORMAT)) {
+                        Log.e(
+                            "ColorFormat",
+                            " format:${encoderOutputVideoFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT)}"
+                        )
+                    }
+                    outputVideoTrack = muxer.addTrack(encoderOutputVideoFormat)
+                    muxer.start()
+                    muxing = true
                     break
                 } else if (encoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
                     Log.e(TAG, "video encoder: output buffers changed")
@@ -341,12 +368,12 @@ class MediaCodecActivity : AppCompatActivity() {
                     TAG,
                     "video encoder return output buffer:$encoderOutputBufferIndex size:${videoEncoderOutputBufferInfo.size}"
                 )
-
-                val encoderOutputBuffer = videoEncoderOutputBuffers[encoderOutputBufferIndex]
-
+                // 获取编码完的缓冲区的index的buffer数据
+                val encoderOutputBuffer = videoEncoder.getOutputBuffer(encoderOutputBufferIndex)!!
+                Log.e(TAG, "videoEncoderOutputBufferInfoFlags: ${videoEncoderOutputBufferInfo.flags}")
                 if ((videoEncoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
-                    Log.d(TAG, "video encoder: codec config buffer")
-                    // Simply ignore codec config buffers.
+                    Log.e(TAG, "video encoder: codec config buffer")
+
                     mVideoConfig = true
                     videoEncoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
                     break
@@ -360,11 +387,12 @@ class MediaCodecActivity : AppCompatActivity() {
                         mainVideoFrame = true
                     } else {
                         if (mVideoSampleTime == 0L) {
-                            mVideoSampleTime = videoEncoderOutputBufferInfo.presentationTimeUs - mLastVideoSampleTime;
+                            mVideoSampleTime = videoEncoderOutputBufferInfo.presentationTimeUs - mLastVideoSampleTime
                         }
                     }
                 }
                 videoEncoderOutputBufferInfo.presentationTimeUs = mLastVideoSampleTime + mVideoSampleTime
+                // 往Muxer中塞入编码玩得EncoderOutputBuffer进行合成
                 if (videoEncoderOutputBufferInfo.size != 0) {
                     muxer.writeSampleData(
                         outputVideoTrack,
@@ -377,10 +405,8 @@ class MediaCodecActivity : AppCompatActivity() {
                     Log.e(TAG, "video encoder: EOS")
                     videoEncoderDone = true
                 }
-                videoEncoder.releaseOutputBuffer(
-                    encoderOutputBufferIndex,
-                    false
-                )
+                // 释放缓冲区
+                videoEncoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
                 videoEncodedFrameCount++
                 // We enqueued an encoded frame, let's try something else next.
                 break
@@ -391,14 +417,11 @@ class MediaCodecActivity : AppCompatActivity() {
              */
 
             if (!muxing && (encoderOutputVideoFormat != null)) {
-                if (mCopyVideo) {
-                    Log.e(TAG, "muxer: adding video track.")
-                    outputVideoTrack = muxer.addTrack(encoderOutputVideoFormat);
-                }
+                Log.e(TAG, "muxer: adding video track.")
+//                outputVideoTrack = muxer.addTrack(encoderOutputVideoFormat)
 
                 Log.d(TAG, "muxer: starting")
-                muxer.start()
-                muxing = true
+
             }
         }
 
