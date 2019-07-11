@@ -142,6 +142,8 @@ class MediaCodecActivity : AppCompatActivity() {
         // Create muxer
         val muxer = createMuxer()
 
+        doExtractorDecodeEncodeMux(videoExtractor, videoDecoder, videoEncoder, muxer)
+
     }
 
     /**
@@ -158,7 +160,7 @@ class MediaCodecActivity : AppCompatActivity() {
         var videoDecoderOutputBuffers = videoDecoder.outputBuffers
 
         val videoEncoderInputBuffers = videoEncoder.inputBuffers
-        val videoEncoderOutputBuffers = videoEncoder.outputBuffers
+        var videoEncoderOutputBuffers = videoEncoder.outputBuffers
 
         val videoDecoderOutputBufferInfo = MediaCodec.BufferInfo()
         val videoEncoderOutputBufferInfo = MediaCodec.BufferInfo()
@@ -183,7 +185,7 @@ class MediaCodecActivity : AppCompatActivity() {
 
         var mVideoConfig = false
         var mainVideoFrame = false
-        var mLatVideoSampleTime = 0L
+        var mLastVideoSampleTime = 0L
         var mVideoSampleTime = 0L
 
         while (!interrupted && !videoEncoderDone) {
@@ -288,19 +290,26 @@ class MediaCodecActivity : AppCompatActivity() {
                     "video decoder processing pending buffer:$pendingVideoDecoderOutputBufferIndex size:$size time:$presentationTime"
                 )
                 if (size >= 0) {
-                    val decoderOutputBuffer = videoDecoderOutputBuffers[pendingVideoDecoderOutputBufferIndex].duplicate()
+                    val decoderOutputBuffer =
+                        videoDecoderOutputBuffers[pendingVideoDecoderOutputBufferIndex].duplicate()
                     decoderOutputBuffer.position(videoDecoderOutputBufferInfo.offset)
                     decoderOutputBuffer.limit(videoDecoderOutputBufferInfo.offset + size)
 
                     encoderInputBuffer.position(0)
                     encoderInputBuffer.put(decoderOutputBuffer)
 
-                    videoEncoder.queueInputBuffer(encoderInputBufferIndex,0, size, presentationTime, videoDecoderOutputBufferInfo.flags)
+                    videoEncoder.queueInputBuffer(
+                        encoderInputBufferIndex,
+                        0,
+                        size,
+                        presentationTime,
+                        videoDecoderOutputBufferInfo.flags
+                    )
                 }
 
                 videoDecoder.releaseOutputBuffer(pendingVideoDecoderOutputBufferIndex, false)
                 pendingVideoDecoderOutputBufferIndex = -1
-                if ((videoDecoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0){
+                if ((videoDecoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                     Log.e(TAG, "video decoder: EOS")
                     videoDecoderDone = true
                 }
@@ -309,6 +318,88 @@ class MediaCodecActivity : AppCompatActivity() {
             /**
              * Poll frames from the video encoder and send them to muxer.
              */
+            while (!videoEncoderDone && (encoderOutputVideoFormat == null || muxing)) {
+                val encoderOutputBufferIndex =
+                    videoEncoder.dequeueOutputBuffer(videoEncoderOutputBufferInfo, TIMEOUT_USEC)
+                if (encoderOutputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    Log.e(TAG, "no video encoder output buffer")
+                    break
+                } else if (encoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    Log.e(TAG, "video encoder: output format changed")
+                    if (outputVideoTrack >= 0) {
+                        Log.e(TAG, "video encoder changed its output format again")
+                    }
+                    encoderOutputVideoFormat = videoEncoder.outputFormat
+                    break
+                } else if (encoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    Log.e(TAG, "video encoder: output buffers changed")
+                    videoEncoderOutputBuffers = videoEncoder.getOutputBuffers()
+                    break
+                }
+
+                Log.e(
+                    TAG,
+                    "video encoder return output buffer:$encoderOutputBufferIndex size:${videoEncoderOutputBufferInfo.size}"
+                )
+
+                val encoderOutputBuffer = videoEncoderOutputBuffers[encoderOutputBufferIndex]
+
+                if ((videoEncoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                    Log.d(TAG, "video encoder: codec config buffer")
+                    // Simply ignore codec config buffers.
+                    mVideoConfig = true
+                    videoEncoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
+                    break
+                }
+
+                Log.e(TAG, "video encoder returned buffer for time:${videoEncoderOutputBufferInfo.presentationTimeUs}")
+
+                if (mVideoConfig) {
+                    if (!mainVideoFrame) {
+                        mLastVideoSampleTime = videoEncoderOutputBufferInfo.presentationTimeUs
+                        mainVideoFrame = true
+                    } else {
+                        if (mVideoSampleTime == 0L) {
+                            mVideoSampleTime = videoEncoderOutputBufferInfo.presentationTimeUs - mLastVideoSampleTime;
+                        }
+                    }
+                }
+                videoEncoderOutputBufferInfo.presentationTimeUs = mLastVideoSampleTime + mVideoSampleTime
+                if (videoEncoderOutputBufferInfo.size != 0) {
+                    muxer.writeSampleData(
+                        outputVideoTrack,
+                        encoderOutputBuffer, videoEncoderOutputBufferInfo
+                    )
+                    mLastVideoSampleTime = videoEncoderOutputBufferInfo.presentationTimeUs
+                }
+
+                if ((videoEncoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                    Log.e(TAG, "video encoder: EOS")
+                    videoEncoderDone = true
+                }
+                videoEncoder.releaseOutputBuffer(
+                    encoderOutputBufferIndex,
+                    false
+                )
+                videoEncodedFrameCount++
+                // We enqueued an encoded frame, let's try something else next.
+                break
+            }
+
+            /**
+             * Start muxing video
+             */
+
+            if (!muxing && (encoderOutputVideoFormat != null)) {
+                if (mCopyVideo) {
+                    Log.e(TAG, "muxer: adding video track.")
+                    outputVideoTrack = muxer.addTrack(encoderOutputVideoFormat);
+                }
+
+                Log.d(TAG, "muxer: starting")
+                muxer.start()
+                muxing = true
+            }
         }
 
     }
