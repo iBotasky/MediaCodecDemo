@@ -282,7 +282,7 @@ class MediaCodecActivity : AppCompatActivity() {
             }
 
             /**
-             * Feed the pending decode audio buffer to the video encoder.
+             * Feed the pending decode video buffer to the video encoder.
              */
             while (pendingVideoDecoderOutputBufferIndex != -1) {
                 //获取Encoder空闲的缓冲区Index，encoderInputBufferIndex
@@ -303,8 +303,7 @@ class MediaCodecActivity : AppCompatActivity() {
                     TAG,
                     "video decoder processing pending buffer:$pendingVideoDecoderOutputBufferIndex size:$size time:$presentationTime"
                 )
-                // 如果数据正确，就把当前的decoderOutputBuffer 放入对应的空闲的EncoderInputBufferindex的编码缓冲\
-                // 区
+                // 如果数据正确，就把当前的decoderOutputBuffer 放入对应的空闲的EncoderInputBufferindex的编码缓冲区
                 if (size >= 0) {
                     val decoderOutputBuffer =
                         videoDecoder.getOutputBuffer(pendingVideoDecoderOutputBufferIndex)!!.duplicate()

@@ -30,9 +30,9 @@ import java.util.Arrays;
  */
 public class EncodeDecodeTest {
     private static final String TAG = "EncodeDecodeTest";
-    private static final boolean VERBOSE = false;           // lots of logging
-    private static final boolean DEBUG_SAVE_FILE = false;   // save copy of encoded movie
-    private static final String DEBUG_FILE_NAME_BASE = Environment.getExternalStorageDirectory().getPath() + File.separator + "input.mp4";
+    private static final boolean VERBOSE = true;           // lots of logging
+    private static final boolean DEBUG_SAVE_FILE = true;   // save copy of encoded movie
+    private static final String DEBUG_FILE_NAME_BASE = "/sdcard/test.";
     // parameters for the encoder
     private static final String MIME_TYPE = "video/avc";    // H.264 Advanced Video Coding
     private static final int FRAME_RATE = 15;               // 15fps
@@ -424,7 +424,7 @@ public class EncodeDecodeTest {
         // stream, not a .mp4 file, so not all players will know what to do with it.
         FileOutputStream outputStream = null;
         if (DEBUG_SAVE_FILE) {
-            String fileName = DEBUG_FILE_NAME_BASE + mWidth + "x" + mHeight + ".mp4";
+            String fileName = Environment.getExternalStorageDirectory().getPath() + File.separator + "test.mp4";
             try {
                 outputStream = new FileOutputStream(fileName);
                 Log.d(TAG, "encoded output will be saved as " + fileName);
