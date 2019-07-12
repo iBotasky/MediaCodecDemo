@@ -278,6 +278,7 @@ class MediaCodecActivity : AppCompatActivity() {
 
                 //赋值decoder解码缓冲区index到pendingVideoDecoderOutputBufferIndex
                 pendingVideoDecoderOutputBufferIndex = decoderOutputBufferIndex
+                Log.e(TAG, "video decoder: attempting to process pending buffer on pending:$pendingVideoDecoderOutputBufferIndex")
                 videoDecodedFrameCount++
             }
 

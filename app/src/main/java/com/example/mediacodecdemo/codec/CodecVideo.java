@@ -61,7 +61,7 @@ public class CodecVideo {
      * Init the properties
      */
     private void init() {
-        Log.e(TAG," on init");
+        Log.e(TAG, " on init");
         // Create MediaExtractor
         try {
             mExtractor = new MediaExtractor();
@@ -132,16 +132,12 @@ public class CodecVideo {
     private void doEncoderDecodeVideoFromBuffer() throws IOException {
         while (!isEndcoderEOS) {
             while (drainEncoder()) {
-                Log.e(TAG," on drainEncoder");
             }
             while (drainDecoder()) {
-                Log.e(TAG," on drainDecoder");
             }
-            while(feedEncoder()){
-                Log.e(TAG," on feedEncoder");
+            while (feedEncoder()) {
             }
             while (drainExtractor()) {
-                Log.e(TAG," on drainExtractor");
             }
         }
 
@@ -173,7 +169,6 @@ public class CodecVideo {
 
 
     private boolean drainEncoder() {
-        Log.e(TAG," on drainEncoder");
         if (isEncodeDone) {
             return false;
         }
@@ -194,12 +189,10 @@ public class CodecVideo {
             mBufferInfo.set(0, 0, 0, mBufferInfo.flags);
         }
         if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
-            // SPS or PPS, which should be passed by MediaFormat.
             mEncoder.releaseOutputBuffer(result, false);
             return true;
         }
         mMuxer.writeSampleData(mOutputTrackId, mEncoder.getOutputBuffer(result), mBufferInfo);
-        mWrittenPresentationTimeUs = mBufferInfo.presentationTimeUs;
         mEncoder.releaseOutputBuffer(result, false);
         return true;
     }
@@ -221,8 +214,10 @@ public class CodecVideo {
         if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
             isDecodeDone = true;
         }
-        if (mBufferInfo.size > 0) {
+        if (mBufferInfo.size >= 0) {
             mPollIndex = result;
+            Log.e(TAG,"index for drainDecoder" + result);
+            return false;
         }
         return true;
     }
@@ -241,6 +236,7 @@ public class CodecVideo {
         long presentationTime = mBufferInfo.presentationTimeUs;
 
         if (size >= 0) {
+            Log.e(TAG,"index for feedEncoder" + mPollIndex);
             ByteBuffer decodedBuffer = mDecoder.getOutputBuffer(mPollIndex).duplicate();
             decodedBuffer.position(mBufferInfo.offset);
             decodedBuffer.limit(mBufferInfo.offset + mBufferInfo.size);
