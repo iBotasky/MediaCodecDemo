@@ -5,6 +5,8 @@ import android.util.Log;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
 
 /**
  * Created by liangbo.su@ubnt on 2019-07-12
@@ -50,6 +52,8 @@ public class CodecVideo {
     private int mOutputTrackId = -1;
 
     private int mPollIndex = -1;
+
+    private ArrayList<Long> mKeyFramesTime= new ArrayList<>();
 
 
     public CodecVideo(String inputVideoFile, String outputVideoFile) {
@@ -106,7 +110,12 @@ public class CodecVideo {
             // Create muxer
             mMuxer = new MediaMuxer(outputVideoFile, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
 
+            doExtractorKeyFramesTime();
+            mExtractor.unselectTrack(videoTrackIndex);
+
+            mExtractor.selectTrack(videoTrackIndex);
             doEncoderDecodeVideoFromBuffer();
+//            doEncoderLastFrames();
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
@@ -129,6 +138,34 @@ public class CodecVideo {
             }
         }
     }
+
+    private void doExtractorKeyFramesTime(){
+        boolean isGetKeyFrameTimesEnd = false;
+        while (!isGetKeyFrameTimesEnd){
+            if ((mExtractor.getSampleFlags() & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0){
+                Log.e(TAG, "This is an key frame");
+                if (mExtractor.getSampleTime() != -1) {
+                    mKeyFramesTime.add(mExtractor.getSampleTime());
+                }
+            }else {
+                Log.e(TAG, "This is not an key frame");
+            }
+            isGetKeyFrameTimesEnd = !mExtractor.advance();
+        }
+        Collections.reverse(mKeyFramesTime);
+        for (Long i : mKeyFramesTime){
+            Log.e(TAG, " time is " + i);
+        }
+    }
+
+
+//    private void doEncoderLastFrames(){
+//        long lastTime = mKeyFramesTime.get(0);
+//
+//        mExtractor.seekTo(lastTime, MediaExtractor.SEEKTO);
+//
+//    }
+
 
     private void doEncoderDecodeVideoFromBuffer() throws IOException {
         while (!isAllDone) {
@@ -227,7 +264,7 @@ public class CodecVideo {
         }
         if (mBufferInfo.size >= 0) {
             mPollIndex = result;
-            feedEncoder();
+//            feedEncoder();
             Log.e(TAG, "time in decoder " + mBufferInfo.presentationTimeUs);
             return false;
         }

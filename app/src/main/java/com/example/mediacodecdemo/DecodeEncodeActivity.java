@@ -7,6 +7,7 @@ import android.view.View;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.example.mediacodecdemo.codec.CodecVideo;
+import com.example.mediacodecdemo.codec.ReverseCodec;
 
 import java.io.File;
 
@@ -39,6 +40,19 @@ public class DecodeEncodeActivity extends AppCompatActivity {
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
+                    }
+                });
+            }
+        });
+
+
+        findViewById(R.id.mediaReverseCodec).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                AsyncTask.THREAD_POOL_EXECUTOR.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        new ReverseCodec(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
                     }
                 });
             }
