@@ -14,7 +14,7 @@ public class CodecVideo {
     /**
      * Const for the video encoder
      */
-    private static final int TIMEOUT_USEC = 10000;
+    private static final int TIMEOUT_USEC = 1000;
     // movie length, in frames
     private static final int NUM_FRAMES = 30;               // two seconds of video
     private static final String MIME_TYPE = "video/avc";  // H.264 Advanced Video Coding
@@ -44,6 +44,7 @@ public class CodecVideo {
     private boolean isEndcoderEOS = false;
     private boolean isDecodeDone = false;
     private boolean isEncodeDone = false;
+    private boolean isAllDone = false;
     private long mWrittenPresentationTimeUs = 0;
 
     private int mOutputTrackId = -1;
@@ -130,17 +131,16 @@ public class CodecVideo {
     }
 
     private void doEncoderDecodeVideoFromBuffer() throws IOException {
-        while (!isEndcoderEOS) {
-            while (drainEncoder()) {
+        while (!isAllDone) {
+            while (drainExtractor()) {
             }
             while (drainDecoder()) {
             }
             while (feedEncoder()) {
             }
-            while (drainExtractor()) {
+            while (drainEncoder()) {
             }
         }
-
     }
 
     private boolean drainExtractor() {
@@ -150,6 +150,7 @@ public class CodecVideo {
 
         int decoderInputIndex = mDecoder.dequeueInputBuffer(TIMEOUT_USEC);
         if (decoderInputIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
+            Log.e(TAG, "video decoder is not valid " + decoderInputIndex);
             return false;
         }
 
@@ -158,10 +159,12 @@ public class CodecVideo {
         long presentationTime = mExtractor.getSampleTime();
         if (size > 0) {
             // Feed the buffer to decoder
+            Log.e(TAG,"time in extractor " + presentationTime);
             mDecoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
         }
         isEndcoderEOS = !mExtractor.advance();
         if (isEndcoderEOS) {
+            Log.e(TAG, "time in extractor is done");
             mDecoder.queueInputBuffer(decoderInputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
         }
         return true;
@@ -181,11 +184,15 @@ public class CodecVideo {
                 MediaFormat actualFormat = mEncoder.getOutputFormat();
                 mOutputTrackId = mMuxer.addTrack(actualFormat);
                 mMuxer.start();
+                return true;
             case MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED:
                 return true;
         }
+        Log.e(TAG, "time in encoder " + mBufferInfo.presentationTimeUs);
         if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+            Log.e(TAG, "time in encoder is done");
             isEncodeDone = true;
+            isAllDone = true;
             mBufferInfo.set(0, 0, 0, mBufferInfo.flags);
         }
         if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
@@ -200,23 +207,28 @@ public class CodecVideo {
 
     private boolean drainDecoder() {
         if (isDecodeDone) {
+            Log.e(TAG, "on decoder done");
             return false;
         }
         int result = mDecoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
         switch (result) {
             case MediaCodec.INFO_TRY_AGAIN_LATER:
+                Log.e(TAG, "no decoder input buffer " + result);
                 return false;
             case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
+                Log.e(TAG, "decoder on formate change " + mDecoder.getOutputFormat());
                 return true;
             case MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED:
                 return true;
         }
         if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+            Log.e(TAG, "time in decoder is done");
             isDecodeDone = true;
         }
         if (mBufferInfo.size >= 0) {
             mPollIndex = result;
-            Log.e(TAG,"index for drainDecoder" + result);
+            feedEncoder();
+            Log.e(TAG, "time in decoder " + mBufferInfo.presentationTimeUs);
             return false;
         }
         return true;
@@ -228,15 +240,15 @@ public class CodecVideo {
             return false;
         }
         int encoderInputIndex = mEncoder.dequeueInputBuffer(TIMEOUT_USEC);
-        if (encoderInputIndex <= 0) {
+        if (encoderInputIndex < 0) {
+            Log.e(TAG, "time in feed no valid");
             return false;
         }
         ByteBuffer inputBuffer = mEncoder.getInputBuffer(encoderInputIndex);
         int size = mBufferInfo.size;
         long presentationTime = mBufferInfo.presentationTimeUs;
-
         if (size >= 0) {
-            Log.e(TAG,"index for feedEncoder" + mPollIndex);
+            Log.e(TAG, "time in feed " + mBufferInfo.presentationTimeUs);
             ByteBuffer decodedBuffer = mDecoder.getOutputBuffer(mPollIndex).duplicate();
             decodedBuffer.position(mBufferInfo.offset);
             decodedBuffer.limit(mBufferInfo.offset + mBufferInfo.size);

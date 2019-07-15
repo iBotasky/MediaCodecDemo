@@ -118,7 +118,7 @@ class MediaCodecActivity : AppCompatActivity() {
             return
         }
 
-        Log.e(TAG,"mWidth:$mWidth mHeight:$mHeight size:${mWidth * mHeight * 4}")
+        Log.e(TAG, "mWidth:$mWidth mHeight:$mHeight size:${mWidth * mHeight * 4}")
 //        val videoOutputFormat = MediaFormat.createVideoFormat(OUTPUT_VIDEO_MIME_TYPE, mWidth, mHeight)
 //        videoOutputFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, videoInputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT))
 //        videoOutputFormat.setInteger(MediaFormat.KEY_BIT_RATE, mWidth * mHeight * videoInputFormat.getInteger(MediaFormat.KEY_FRAME_RATE) / 8)
@@ -216,6 +216,7 @@ class MediaCodecActivity : AppCompatActivity() {
                 )
                 //  video的size正确，就解码该index的缓冲区的视频数据
                 if (size > 0) {
+                    Log.e(TAG, "time in extractor $presentationTime")
                     videoDecoder.queueInputBuffer(
                         decoderInputBufferIndex,
                         0,
@@ -255,7 +256,10 @@ class MediaCodecActivity : AppCompatActivity() {
                 } else if (decoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     decoderOutputVideoFormat = videoDecoder.outputFormat
 
-                    Log.e("ColorFormat", " in track:${decoderOutputVideoFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT)}")
+                    Log.e(
+                        "ColorFormat",
+                        " in track:${decoderOutputVideoFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT)}"
+                    )
                     Log.e(TAG, "video decoder: output fromat changed:$decoderOutputVideoFormat")
                     break
                 } else if (decoderOutputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
@@ -275,10 +279,14 @@ class MediaCodecActivity : AppCompatActivity() {
                     break
                 }
                 Log.e(TAG, "video decoder: returned buffer for time:${videoDecoderOutputBufferInfo.presentationTimeUs}")
+                Log.e(TAG, "time in decoder ${videoDecoderOutputBufferInfo.presentationTimeUs}")
 
                 //赋值decoder解码缓冲区index到pendingVideoDecoderOutputBufferIndex
                 pendingVideoDecoderOutputBufferIndex = decoderOutputBufferIndex
-                Log.e(TAG, "video decoder: attempting to process pending buffer on pending:$pendingVideoDecoderOutputBufferIndex")
+                Log.e(
+                    TAG,
+                    "video decoder: attempting to process pending buffer on pending:$pendingVideoDecoderOutputBufferIndex"
+                )
                 videoDecodedFrameCount++
             }
 
@@ -306,11 +314,15 @@ class MediaCodecActivity : AppCompatActivity() {
                 )
                 // 如果数据正确，就把当前的decoderOutputBuffer 放入对应的空闲的EncoderInputBufferindex的编码缓冲区
                 if (size >= 0) {
+
                     val decoderOutputBuffer =
                         videoDecoder.getOutputBuffer(pendingVideoDecoderOutputBufferIndex)!!.duplicate()
                     decoderOutputBuffer.position(videoDecoderOutputBufferInfo.offset)
                     decoderOutputBuffer.limit(videoDecoderOutputBufferInfo.offset + size)
-                    Log.e("BufferOver", " decoderPosition:${decoderOutputBuffer.position()}  limit:${decoderOutputBuffer.limit()} encoderInput:${encoderInputBuffer.limit()}")
+                    Log.e(
+                        "BufferOver",
+                        " decoderPosition:${decoderOutputBuffer.position()}  limit:${decoderOutputBuffer.limit()} encoderInput:${encoderInputBuffer.limit()}"
+                    )
                     encoderInputBuffer.clear()
                     // endcoderInputbuffer 存入VideoDecoder解码完的buffer数据，
                     encoderInputBuffer.put(decoderOutputBuffer)
@@ -322,6 +334,7 @@ class MediaCodecActivity : AppCompatActivity() {
                         presentationTime,
                         videoDecoderOutputBufferInfo.flags
                     )
+                    Log.e(TAG, "time in feed $presentationTime")
                 }
                 // 释放decoder的缓冲区
                 videoDecoder.releaseOutputBuffer(pendingVideoDecoderOutputBufferIndex, false)
@@ -399,6 +412,7 @@ class MediaCodecActivity : AppCompatActivity() {
                         encoderOutputBuffer, videoEncoderOutputBufferInfo
                     )
                     mLastVideoSampleTime = videoEncoderOutputBufferInfo.presentationTimeUs
+                    Log.e(TAG, "time in encoder:$mLastVideoSampleTime")
                 }
 
                 if ((videoEncoderOutputBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
