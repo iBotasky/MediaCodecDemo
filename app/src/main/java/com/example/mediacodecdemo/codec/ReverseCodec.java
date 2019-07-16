@@ -42,12 +42,6 @@ public class ReverseCodec {
     private int mHeight;
     private int mColorFormat;
 
-    private boolean isEndcoderEOS = false;
-    private boolean isDecodeDone = false;
-    private boolean isEncodeDone = false;
-    private boolean isAllDone = false;
-    private long mWrittenPresentationTimeUs = 0;
-
     private long mVideoDuration = 0;
 
 
@@ -140,7 +134,7 @@ public class ReverseCodec {
      * 翻转最后一个KeyFrame到结束
      */
     private void doReverse() {
-        Stack<ByteBuffer> byteBuffers = new Stack<>();
+        Stack<byte[]> byteBuffers = new Stack<>();
         Stack<MediaCodec.BufferInfo> bufferInfos = new Stack<>();
 
 
@@ -149,6 +143,7 @@ public class ReverseCodec {
         boolean isDecodeDone = false;
         boolean isEncodeDone = false;
 
+        int m = 0;
         while (!isAllDone) {
             // Extractor
             while (!isExtractorDone) {
@@ -167,7 +162,8 @@ public class ReverseCodec {
                 // We need to calculate the time for reverse
                 long presentationTime = mVideoDuration - mExtractor.getSampleTime();
                 if (size > 0) {
-                    Log.e(TAG, "decoder input is valid " + size + " time " + presentationTime);
+                    Log.e(TAG,"decoder input time " + mVideoDuration + " sampleTime " + mExtractor.getSampleTime() + " presentTime " + presentationTime);
+                    Log.e(TAG, "decoder input is valid flag " + mExtractor.getSampleFlags() + " size " + size + " time " + presentationTime);
                     mDecoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
                 }
                 isExtractorDone = !mExtractor.advance();
@@ -184,6 +180,7 @@ public class ReverseCodec {
                 }
                 MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
                 int result = mDecoder.dequeueOutputBuffer(info, TIMEOUT_USEC);
+
                 if (result == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     Log.e(TAG, "decoder output no buffer valid");
                     break;
@@ -193,12 +190,16 @@ public class ReverseCodec {
                 } else if (result == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
                     break;
                 }
+
                 // TODO 这里不能>=0 ,不然后面导致Encoder的input一直-1
                 if (info.size > 0 && result >= 0) {
-                    Log.e(TAG, "save the decode buffer  time " + info.presentationTimeUs + " flag " + info.flags + " size " + info.size);
+                    Log.e(TAG, "save the decode buffer time " + info.presentationTimeUs + " flag " + info.flags + " size " + info.size);
                     // save the decode buffer
-                    ByteBuffer decodedByteBuffer = mDecoder.getOutputBuffer(result).duplicate();
-                    byteBuffers.push(decodedByteBuffer);
+                    ByteBuffer decodedOutputBuffer = mDecoder.getOutputBuffer(result);
+                    Log.e(TAG,"classname: "  + decodedOutputBuffer + " hashcode " + decodedOutputBuffer.hashCode());
+                    byte[] array = new byte[decodedOutputBuffer.limit()];
+                    decodedOutputBuffer.get(array);
+                    byteBuffers.push(array);
                     bufferInfos.push(info);
                 }
                 if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
@@ -226,19 +227,23 @@ public class ReverseCodec {
                     Log.e(TAG, "encoder input is not valid");
                     break;
                 }
-                ByteBuffer decodedOutput = byteBuffers.pop();
+                byte[] decodedOutput = byteBuffers.pop();
                 MediaCodec.BufferInfo info = bufferInfos.pop();
-
+//                m--;
+//                CodecUtil.saveBitmap(mBufferInfo.size, decodedOutput, mWidth, mHeight, String.format("%2d.jpg", m), false);
+                Log.e(TAG,"classname: "  + decodedOutput + " hashcode " + decodedOutput.hashCode());
                 ByteBuffer encoderInputBuffer = mEncoder.getInputBuffer(encoderInputIndex);
                 int size = info.size;
                 long presentationTime = info.presentationTimeUs;
                 Log.e(TAG, "encoder input buffer at:" + encoderInputIndex + "  size " + size + " time " + presentationTime + " flags " + info.flags);
 
-                decodedOutput.position(info.offset);
-                decodedOutput.limit(info.offset + size);
+//                decodedOutput.position(info.offset);
+//                decodedOutput.limit(info.offset + size);
 
                 encoderInputBuffer.clear();
+
                 encoderInputBuffer.put(decodedOutput);
+
                 mEncoder.queueInputBuffer(encoderInputIndex, 0, size, presentationTime, info.flags);
 
                 if (byteBuffers.isEmpty() || bufferInfos.isEmpty()) {
@@ -273,6 +278,7 @@ public class ReverseCodec {
                     mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
                     break;
                 }
+
                 Log.e(TAG, "mBuffer flags " + mBufferInfo.flags + " size " + mBufferInfo.size + " time " + mBufferInfo.presentationTimeUs);
                 mMuxer.writeSampleData(mOutputTrackId, encoderOutputBuffer, mBufferInfo);
                 mEncoder.releaseOutputBuffer(encoderOutputIndex, false);

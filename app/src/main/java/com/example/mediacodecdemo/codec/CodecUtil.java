@@ -1,9 +1,15 @@
 package com.example.mediacodecdemo.codec;
 
+import android.graphics.*;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
+import android.os.Environment;
+import android.util.Log;
+
+import java.io.*;
+import java.nio.ByteBuffer;
 
 
 /**
@@ -79,6 +85,46 @@ public class CodecUtil {
                 return true;
             default:
                 return false;
+        }
+    }
+
+    public static Bitmap yuvToBitma(int size, ByteBuffer byteBuffer, int width, int height) {
+        byte[] array = new byte[size];
+        byteBuffer.get(array);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        YuvImage yuvImage = new YuvImage(array, ImageFormat.NV21, width, height, null);
+        yuvImage.compressToJpeg(new Rect(0, 0, width, height), 50, out);
+        byte[] imageBytes = out.toByteArray();
+        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+    }
+
+    public static void saveBitmap(int size, ByteBuffer byteBuffer, int width, int height, String fileName, boolean isInput) {
+        byte[] array = new byte[size];
+        byteBuffer.get(array);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        YuvImage yuvImage = new YuvImage(array, ImageFormat.NV21, width, height, null);
+        yuvImage.compressToJpeg(new Rect(0, 0, width, height), 50, out);
+        byte[] imageBytes = out.toByteArray();
+        Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+
+        File dir = isInput ? new File(Environment.getExternalStorageDirectory().getPath() + File.separator + "zCodecInput") :
+                new File(Environment.getExternalStorageDirectory().getPath() + File.separator + "zCodecOutput");
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        File file = new File(dir, fileName);
+        FileOutputStream fOut = null;
+        try {
+            fOut = new FileOutputStream(file);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, fOut);
+            fOut.flush();
+            fOut.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+
+        }finally {
+            bitmap.recycle();
+            Log.e("ReverseCodec", " bitmap is save");
         }
     }
 }
