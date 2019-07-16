@@ -167,9 +167,7 @@ public class ReverseCodec {
                 ByteBuffer decodeInputBuffer = mDecoder.getInputBuffer(decoderInputIndex);
                 int size = mExtractor.readSampleData(decodeInputBuffer, 0);
                 long presentationTime = mExtractor.getSampleTime();
-//                long presentationTime = mExtractor.getSampleTime() - lastKeyFrameTime;
                 if (size > 0){
-//                if (size > 0 && mExtractor.getSampleTime() <= videoEndTime){
                     Log.e(TAG, "decoder input is valide " + size + " time " + presentationTime);
                     mDecoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
                 }
