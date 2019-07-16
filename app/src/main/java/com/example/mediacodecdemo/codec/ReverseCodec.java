@@ -213,7 +213,7 @@ public class ReverseCodec {
 
 
                     if (size >= 0){
-                        Log.e(TAG,"encoder input buffer size " + size + " time " + presentationTime);
+                        Log.e(TAG,"encoder input buffer size " + size + " time " + presentationTime + " flags " + mBufferInfo.flags);
                         ByteBuffer decoderOutputBuffer = mDecoder.getOutputBuffer(result).duplicate();
                         decoderOutputBuffer.position(mBufferInfo.offset);
                         decoderOutputBuffer.limit(mBufferInfo.offset + size);
@@ -225,7 +225,7 @@ public class ReverseCodec {
                                 0,
                                 size,
                                 presentationTime,
-                                mBufferInfo.size
+                                mBufferInfo.flags
                         );
                     }
                     mDecoder.releaseOutputBuffer(result, false);
@@ -256,7 +256,6 @@ public class ReverseCodec {
                 }
 
                 ByteBuffer encoderOutputBuffer = mEncoder.getOutputBuffer(encoderOutputIndex);
-                Log.e(TAG," mBuffer flags1 " + mBufferInfo.flags + " size " + mBufferInfo.size);
                 if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0){
                     mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
                     break;
