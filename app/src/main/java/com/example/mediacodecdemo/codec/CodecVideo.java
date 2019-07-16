@@ -223,7 +223,7 @@ public class CodecVideo {
                     int encoderInputBufferIndex = mEncoder.dequeueInputBuffer(TIMEOUT_USEC);
 
                     if (encoderInputBufferIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
-                        Log.e(TAG, "encoder input is not valide");
+                        Log.e(TAG, "encoder input is not valid");
                         break;
                     }
                     ByteBuffer encoderInputBuffer = mEncoder.getInputBuffer(encoderInputBufferIndex);
