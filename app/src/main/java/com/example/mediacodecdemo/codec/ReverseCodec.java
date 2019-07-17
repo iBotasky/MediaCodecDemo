@@ -160,7 +160,7 @@ public class ReverseCodec {
                 ByteBuffer decodeInputBuffer = mDecoder.getInputBuffer(decoderInputIndex);
                 int size = mExtractor.readSampleData(decodeInputBuffer, 0);
                 // We need to calculate the time for reverse
-                long presentationTime = mVideoDuration - mExtractor.getSampleTime();
+                long presentationTime = mExtractor.getSampleTime();
                 if (size > 0) {
                     Log.e(TAG,"decoder input time " + mVideoDuration + " sampleTime " + mExtractor.getSampleTime() + " presentTime " + presentationTime);
                     Log.e(TAG, "decoder input is valid flag " + mExtractor.getSampleFlags() + " size " + size + " time " + presentationTime);
@@ -194,9 +194,10 @@ public class ReverseCodec {
                 // TODO 这里不能>=0 ,不然后面导致Encoder的input一直-1
                 if (info.size > 0 && result >= 0) {
                     Log.e(TAG, "save the decode buffer time " + info.presentationTimeUs + " flag " + info.flags + " size " + info.size);
-                    // save the decode buffer
+                    // save the decode buffer, Here we use the array to save, not the buffer.duplicate(), because it's just point to the them address
                     ByteBuffer decodedOutputBuffer = mDecoder.getOutputBuffer(result);
-                    Log.e(TAG,"classname: "  + decodedOutputBuffer + " hashcode " + decodedOutputBuffer.hashCode());
+                    info.presentationTimeUs = mVideoDuration - info.presentationTimeUs;
+                    Log.e(TAG, "save the decoder buffer new Time " + info.presentationTimeUs);
                     byte[] array = new byte[decodedOutputBuffer.limit()];
                     decodedOutputBuffer.get(array);
                     byteBuffers.push(array);
@@ -229,16 +230,11 @@ public class ReverseCodec {
                 }
                 byte[] decodedOutput = byteBuffers.pop();
                 MediaCodec.BufferInfo info = bufferInfos.pop();
-//                m--;
-//                CodecUtil.saveBitmap(mBufferInfo.size, decodedOutput, mWidth, mHeight, String.format("%2d.jpg", m), false);
                 Log.e(TAG,"classname: "  + decodedOutput + " hashcode " + decodedOutput.hashCode());
                 ByteBuffer encoderInputBuffer = mEncoder.getInputBuffer(encoderInputIndex);
                 int size = info.size;
                 long presentationTime = info.presentationTimeUs;
                 Log.e(TAG, "encoder input buffer at:" + encoderInputIndex + "  size " + size + " time " + presentationTime + " flags " + info.flags);
-
-//                decodedOutput.position(info.offset);
-//                decodedOutput.limit(info.offset + size);
 
                 encoderInputBuffer.clear();
 
