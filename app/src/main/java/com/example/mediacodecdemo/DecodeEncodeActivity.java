@@ -6,8 +6,8 @@ import android.os.Environment;
 import android.view.View;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import com.example.mediacodecdemo.codec.CodecVideo;
-import com.example.mediacodecdemo.codec.ReverseCodec;
+import com.example.mediacodecdemo.codec.ReverseShortVideo;
+import com.example.mediacodecdemo.codec.ReverseVideo;
 
 import java.io.File;
 
@@ -36,7 +36,7 @@ public class DecodeEncodeActivity extends AppCompatActivity {
                     public void run() {
                         try {
 //                            new EncodeDecodeTest().testEncodeDecodeVideoFromBufferToBuffer720p();
-                            new CodecVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
+//                            new CodecVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
@@ -52,7 +52,19 @@ public class DecodeEncodeActivity extends AppCompatActivity {
                 AsyncTask.THREAD_POOL_EXECUTOR.execute(new Runnable() {
                     @Override
                     public void run() {
-                        new ReverseCodec(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
+                        new ReverseShortVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
+                    }
+                });
+            }
+        });
+
+        findViewById(R.id.longMediaReverseCodec).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                AsyncTask.THREAD_POOL_EXECUTOR.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        new ReverseVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
                     }
                 });
             }

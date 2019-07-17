@@ -124,7 +124,7 @@ public class CodecUtil {
 
         }finally {
             bitmap.recycle();
-            Log.e("ReverseCodec", " bitmap is save");
+            Log.e("ReverseShortVideo", " bitmap is save");
         }
     }
 }

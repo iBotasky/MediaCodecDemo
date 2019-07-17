@@ -5,13 +5,15 @@ import android.util.Log;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Stack;
 
 /**
- * Created by liangbo.su@ubnt on 2019-07-15
+ * Created by liangbo.su@ubnt on 2019-07-17
  */
-public class ReverseCodec {
-    private static final String TAG = "ReverseCodec";
+public class ReverseVideo {
+    private static final String TAG = "ReverseShortVideo";
     /**
      * Const for the video encoder
      */
@@ -49,7 +51,7 @@ public class ReverseCodec {
 
     private ArrayList<Long> mKeyFramesTime = new ArrayList<>();
 
-    public ReverseCodec(String inputVideoFile, String outputVideoFile) {
+    public ReverseVideo(String inputVideoFile, String outputVideoFile) {
         this.inputVideoFile = inputVideoFile;
         this.outputVideoFile = outputVideoFile;
         init();
@@ -310,5 +312,4 @@ public class ReverseCodec {
             Log.e(TAG, " time is " + i);
         }
     }
-
 }
