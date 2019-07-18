@@ -106,11 +106,12 @@ public class ReverseVideo {
             ArrayList<Long> keyFrameTimes = getKeyFramesTime();
             mReverseEndTime = keyFrameTimes.get(keyFrameTimes.size() - 2);
 
-//            for (int i = 1; i < keyFrameTimes.size(); i++) {
-//                doReverseForEverySlice(videoInputFormat, keyFrameTimes.get(i), keyFrameTimes.get(i - 1));
-//            }
-            doReverseForEverySlice(videoInputFormat, keyFrameTimes.get(2), keyFrameTimes.get(1));
-
+            for (int i = 1; i < keyFrameTimes.size(); i++) {
+                doReverseForEverySlice(videoInputFormat, keyFrameTimes.get(i), keyFrameTimes.get(i - 1));
+                doEncoderForEverySlice();
+            }
+//            doReverseForEverySlice(videoInputFormat, keyFrameTimes.get(2), keyFrameTimes.get(1));
+//            doGetDecodeBuffer(videoInputFormat, keyFrameTimes.get(2), keyFrameTimes.get(1));
 //            mVideoDuration = mVideoDuration - keyFrameTimes.get(3);
 //            doReverse(keyFrameTimes.get(2), keyFrameTimes.get(0));
 //            doReverse(keyFrameTimes.get(3), keyFrameTimes.get(2));
@@ -142,11 +143,89 @@ public class ReverseVideo {
     private Stack<byte[]> byteBuffers = new Stack<>();
     private Stack<MediaCodec.BufferInfo> bufferInfos = new Stack<>();
 
+
+    private void doGetDecodeBuffer(MediaFormat videoInputFormat, long startTime, long endTime) throws IOException {
+        MediaCodec decoder = MediaCodec.createDecoderByType(videoInputFormat.getString(MediaFormat.KEY_MIME));
+        decoder.configure(videoInputFormat, null, null, 0);
+        decoder.start();
+
+        Log.e(TAG, " startTime " + startTime + " endTime " + endTime);
+        // Here we test the last time.
+        mExtractor.seekTo(startTime, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
+        boolean isAllDone = false;
+        boolean isExtractorDone = false;
+        boolean isDecodeDone = false;
+        while (!isAllDone) {
+            // Extractor
+            while (!isExtractorDone) {
+                if (isExtractorDone) {
+                    break;
+                }
+                int decoderInputIndex = decoder.dequeueInputBuffer(TIMEOUT_USEC);
+                if (decoderInputIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    break;
+                }
+                ByteBuffer decodeInputBuffer = decoder.getInputBuffer(decoderInputIndex);
+                decodeInputBuffer.clear();
+
+                int size = mExtractor.readSampleData(decodeInputBuffer, 0);
+                // We need to calculate the time for reverse
+                long presentationTime = mExtractor.getSampleTime();
+                if (size != -1 && presentationTime != -1) {
+                    if (presentationTime < endTime) {
+                        Log.e(TAG, "decoder input valid presentTime " + presentationTime + " size " + size + " flag " + mExtractor.getSampleFlags());
+                        decoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
+                        mExtractor.advance();
+                    } else {
+                        isExtractorDone = true;
+                        decoder.queueInputBuffer(decoderInputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                    }
+                } else {
+                    isExtractorDone = true;
+                    decoder.queueInputBuffer(decoderInputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                }
+            }
+
+            // Decoder
+            while (!isDecodeDone) {
+                if (isDecodeDone) {
+                    break;
+                }
+                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                int result = decoder.dequeueOutputBuffer(info, TIMEOUT_USEC);
+                Log.e(TAG, " result is " + result);
+                if (result < 0){
+                    break;
+                }
+                Log.e(TAG, "save the decode buffer time " + info.presentationTimeUs + " flag " + info.flags + " size " + info.size);
+                if (((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0) && info.size >= 0 && result >= 0) {
+                    // save the decode buffer, Here we use the array to save, not the buffer.duplicate(), because it's just point to the them address
+                    ByteBuffer decodedOutputBuffer = decoder.getOutputBuffer(result);
+//                    info.presentationTimeUs = endTime - info.presentationTimeUs;
+                    Log.e(TAG, "save the decoder buffer new Time " + info.presentationTimeUs);
+                    byte[] array = new byte[decodedOutputBuffer.limit()];
+                    decodedOutputBuffer.get(array);
+                    byteBuffers.push(array);
+                    bufferInfos.push(info);
+                }
+                if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                    Log.e(TAG, "video decoder done");
+                    isDecodeDone = true;
+                    isAllDone = true;
+                }
+                decoder.releaseOutputBuffer(result, false);
+            }
+        }
+        decoder.stop();
+        decoder.release();
+    }
+
     /**
      * Do save buffer for every slice
      */
-    private void doReverseForEverySlice(MediaFormat videoInputFormat, long startTime, long endTime) throws IOException{
-
+    private void doReverseForEverySlice(MediaFormat videoInputFormat, long startTime, long endTime) throws IOException {
+        bufferInfos.clear();
+        byteBuffers.clear();
         MediaCodec decoder = MediaCodec.createDecoderByType(videoInputFormat.getString(MediaFormat.KEY_MIME));
         decoder.configure(videoInputFormat, null, null, 0);
         decoder.start();
@@ -176,23 +255,20 @@ public class ReverseVideo {
                 int size = mExtractor.readSampleData(decodeInputBuffer, 0);
                 // We need to calculate the time for reverse
                 long presentationTime = mExtractor.getSampleTime();
-                if (size >= 0) {
-                    Log.e(TAG, "decoder input valid presentTime " + presentationTime + " flag " + mExtractor.getSampleFlags() + " size " + size);
-                    decoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
-                }
-
-                if (endTime == mVideoDuration) {
-                    isExtractorDone = !mExtractor.advance();
-                } else {
-                    mExtractor.advance();
-                    isExtractorDone = mExtractor.getSampleTime() >= endTime;
-                }
-
-                if (isExtractorDone) {
-                    Log.e(TAG, "extractor is done " + presentationTime);
-//                    if (endTime == mVideoDuration) {
-                        decoder.queueInputBuffer(decoderInputIndex, 0, decodeInputBuffer.limit(), presentationTime, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-//                    }
+                if (size != -1 && presentationTime != -1) {
+                    if (presentationTime < endTime){
+                        Log.e(TAG, "decoder input valid presentTime " + presentationTime + " size " + size + " flag " + mExtractor.getSampleFlags());
+                        decoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
+                        mExtractor.advance();
+                    }else {
+                        Log.e(TAG, "extractor is done ");
+                        isExtractorDone = true;
+                        decoder.queueInputBuffer(decoderInputIndex, 0, 0, 0 ,MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                    }
+                }else {
+                    Log.e(TAG, "extractor is done ");
+                    isExtractorDone = true;
+                    decoder.queueInputBuffer(decoderInputIndex, 0, 0,  0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
                 }
             }
 
@@ -235,6 +311,91 @@ public class ReverseVideo {
         decoder.stop();
         decoder.release();
     }
+
+
+    private void doEncoderForEverySlice(){
+        // Encode the data
+        boolean isReverseDone = false;
+        boolean isFeedDone = false;
+        boolean isEncodeDone = false;
+        int frameCount = byteBuffers.size();
+        Log.e(TAG, " size of byteBuffe " + byteBuffers.size());
+        while (!isReverseDone) {
+            while (!isFeedDone) {
+                if (isFeedDone) {
+                    break;
+                }
+                if (byteBuffers.isEmpty()) {
+                    Log.e(TAG, "Feed encoder done");
+                    isFeedDone = true;
+                    break;
+                }
+                int encoderInputIndex = mEncoder.dequeueInputBuffer(TIMEOUT_USEC);
+                if (encoderInputIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    Log.e(TAG, "encoder input is not valid");
+                    break;
+                }
+                byte[] decodedOutput = byteBuffers.pop();
+                MediaCodec.BufferInfo info = bufferInfos.pop();
+                ByteBuffer encoderInputBuffer = mEncoder.getInputBuffer(encoderInputIndex);
+                int size = info.size;
+                long presentationTime = info.presentationTimeUs;
+                Log.e(TAG, "encoder input buffer at:" + encoderInputIndex + "  size " + size + " time " + presentationTime + " flags " + info.flags);
+
+                encoderInputBuffer.clear();
+
+                encoderInputBuffer.put(decodedOutput);
+
+                mEncoder.queueInputBuffer(encoderInputIndex, 0, size, presentationTime, info.flags);
+
+                if (byteBuffers.isEmpty() || bufferInfos.isEmpty()) {
+                    Log.e(TAG, "Feed encoder done");
+                    isFeedDone = true;
+                }
+            }
+
+            // Encode
+            while (!isEncodeDone) {
+                if (isEncodeDone) {
+                    break;
+                }
+
+                int encoderOutputIndex = mEncoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
+                Log.e(TAG, "encoder input buffer index " + encoderOutputIndex);
+                if (encoderOutputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    Log.e(TAG, "encoder output is not valid");
+                    break;
+                } else if (encoderOutputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    MediaFormat realForamt = mEncoder.getOutputFormat();
+                    Log.e(TAG, "encoder output change:" + realForamt);
+                    mOutputTrackId = mMuxer.addTrack(realForamt);
+                    mMuxer.start();
+                    continue;
+                } else if (encoderOutputIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    break;
+                }
+
+                ByteBuffer encoderOutputBuffer = mEncoder.getOutputBuffer(encoderOutputIndex);
+                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                    mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
+                    break;
+                }
+
+                Log.e(TAG, "mBuffer flags " + mBufferInfo.flags + " size " + mBufferInfo.size + " time " + mBufferInfo.presentationTimeUs);
+                mMuxer.writeSampleData(mOutputTrackId, encoderOutputBuffer, mBufferInfo);
+                mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
+                frameCount--;
+                Log.e(TAG, " on frameCount -- " + frameCount);
+                if (frameCount <= 0) {
+                    Log.e(TAG, " encoder Done " + frameCount);
+                    isEncodeDone = true;
+                    isReverseDone = true;
+                }
+            }
+        }
+    }
+
+
 
     /**
      * 翻转最后一个KeyFrame到结束
