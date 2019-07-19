@@ -6,6 +6,7 @@ import android.os.Environment;
 import android.view.View;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import com.example.mediacodecdemo.codec.CodecVideo;
 import com.example.mediacodecdemo.codec.ReverseShortVideo;
 import com.example.mediacodecdemo.codec.ReverseVideo;
 
@@ -35,8 +36,8 @@ public class DecodeEncodeActivity extends AppCompatActivity {
                     @Override
                     public void run() {
                         try {
-//                            new EncodeDecodeTest().testEncodeDecodeVideoFromBufferToBuffer720p();
-//                            new CodecVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
+                            new EncodeDecodeTest().testEncodeDecodeVideoFromBufferToBuffer720p();
+                            new CodecVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
                         } catch (Exception e) {
                             e.printStackTrace();
                         }

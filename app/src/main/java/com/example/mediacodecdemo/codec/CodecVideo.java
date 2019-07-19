@@ -72,7 +72,6 @@ public class CodecVideo {
             mExtractor = new MediaExtractor();
             mExtractor.setDataSource(inputVideoFile);
 
-
             int videoTrackIndex = CodecUtil.getVideoTrackIndex(mExtractor);
             mExtractor.selectTrack(videoTrackIndex);
             MediaFormat videoInputFormat = mExtractor.getTrackFormat(videoTrackIndex);
@@ -115,7 +114,6 @@ public class CodecVideo {
 
             mExtractor.selectTrack(videoTrackIndex);
             doEncoderDecodeVideoFromBuffer();
-//            doEncoderLastFrames();
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
@@ -158,14 +156,67 @@ public class CodecVideo {
         }
     }
 
+    public static void showByteHexArrayLog(String tag, String log, byte[] data, int lineNumber) {
+        StringBuilder logBuffer = new StringBuilder();
+        logBuffer.append(log + "\n{");
+        for (int i = 0; i < data.length; i++) {
+            logBuffer.append(String.format("%02x", data[i]));
+            if (i < data.length - 1) {
+                logBuffer.append(", ");
+            }
+            if (i % lineNumber == lineNumber - 1) {
+                logBuffer.append("\n");
+                if (logBuffer.length() >= 2000) {
+                    Log.i(tag, "" + logBuffer.toString());
+                    logBuffer = new StringBuilder();
+                }
+            }
 
-//    private void doEncoderLastFrames(){
-//        long lastTime = mKeyFramesTime.get(0);
-//
-//        mExtractor.seekTo(lastTime, MediaExtractor.SEEKTO);
-//
-//    }
+        }
+        logBuffer.delete(logBuffer.length(), logBuffer.length());
+        Log.i(tag, logBuffer.toString() + "}");
+    }
 
+    /**
+     * NV21TONV12
+     *
+     * @param nv21
+     * @param nv12
+     * @param width
+     * @param height
+     */
+    private void NV21ToNV12(byte[] nv21, byte[] nv12, int width, int height) {
+        if (nv21 == null || nv12 == null) return;
+        int framesize = width * height;
+        int i = 0, j = 0;
+        System.arraycopy(nv21, 0, nv12, 0, framesize);
+        for (i = 0; i < framesize; i++) {
+            nv12[i] = nv21[i];
+        }
+        for (j = 0; j < framesize / 2; j += 2) {
+            nv12[framesize + j - 1] = nv21[j + framesize];
+        }
+        for (j = 0; j < framesize / 2; j += 2) {
+            nv12[framesize + j] = nv21[j + framesize - 1];
+        }
+    }
+
+
+    public byte[] nv21ToI420(byte[] data, byte[] ret, int width, int height) {
+        int total = width * height;
+
+        ByteBuffer bufferY = ByteBuffer.wrap(ret, 0, total);
+        ByteBuffer bufferU = ByteBuffer.wrap(ret, total, total / 4);
+        ByteBuffer bufferV = ByteBuffer.wrap(ret, total + total / 4, total / 4);
+
+        bufferY.put(data, 0, total);
+        for (int i=total; i<data.length; i+=2) {
+            bufferV.put(data[i]);
+            bufferU.put(data[i+1]);
+        }
+
+        return ret;
+    }
 
     private void doEncoderDecodeVideoFromBuffer() throws IOException {
         boolean isAllDone = false;
@@ -188,7 +239,7 @@ public class CodecVideo {
                 ByteBuffer decodeInputBuffer = mDecoder.getInputBuffer(decoderInputIndex);
                 int size = mExtractor.readSampleData(decodeInputBuffer, 0);
                 long presentationTime = mExtractor.getSampleTime();
-                if (size > 0) {
+                if (size != -1 && presentationTime != -1) {
                     Log.e(TAG, "decoder input is valide " + size + " time " + presentationTime);
                     mDecoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
                 }
@@ -229,15 +280,26 @@ public class CodecVideo {
                     ByteBuffer encoderInputBuffer = mEncoder.getInputBuffer(encoderInputBufferIndex);
                     int size = mBufferInfo.size;
                     long presentationTime = mBufferInfo.presentationTimeUs;
-
-
                     if (size >= 0) {
                         Log.e(TAG, "encoder input buffer size " + size + " time " + presentationTime + " flags " + mBufferInfo.flags);
-                        ByteBuffer decoderOutputBuffer = mDecoder.getOutputBuffer(result).duplicate();
+                        ByteBuffer decoderOutputBuffer = mDecoder.getOutputBuffer(result);
+
+                        byte[] original = new byte[decoderOutputBuffer.limit()];
+                        decoderOutputBuffer.get(original);
+
+                        byte[] trans = new byte[decoderOutputBuffer.limit()];
+                        if((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0) {
+                            nv21ToI420(original, trans, mWidth, mHeight);
+                        }else {
+                            decoderOutputBuffer.get(trans);
+                        }
+//                        decoderOutputBuffer.get(array);
+//                        showByteHexArrayLog(TAG, "byteBuffer", array, 96);
+
                         decoderOutputBuffer.position(mBufferInfo.offset);
                         decoderOutputBuffer.limit(mBufferInfo.offset + size);
                         encoderInputBuffer.clear();
-                        encoderInputBuffer.put(decoderOutputBuffer);
+                        encoderInputBuffer.put(trans);
 
                         mEncoder.queueInputBuffer(
                                 encoderInputBufferIndex,
@@ -291,127 +353,5 @@ public class CodecVideo {
                 mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
             }
         }
-    }
-
-
-    private boolean drainExtractor() {
-        if (isEndcoderEOS) {
-            return false;
-        }
-
-        int decoderInputIndex = mDecoder.dequeueInputBuffer(TIMEOUT_USEC);
-        if (decoderInputIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
-            Log.e(TAG, "video decoder is not valid " + decoderInputIndex);
-            return false;
-        }
-
-        ByteBuffer decodeInputBuffer = mDecoder.getInputBuffer(decoderInputIndex);
-        int size = mExtractor.readSampleData(decodeInputBuffer, 0);
-        long presentationTime = mExtractor.getSampleTime();
-        if (size > 0) {
-            // Feed the buffer to decoder
-            Log.e(TAG, "time in extractor " + presentationTime);
-            mDecoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
-        }
-        isEndcoderEOS = !mExtractor.advance();
-        if (isEndcoderEOS) {
-            Log.e(TAG, "time in extractor is done");
-            mDecoder.queueInputBuffer(decoderInputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-        }
-        return true;
-    }
-
-
-    private boolean drainEncoder() {
-        if (isEncodeDone) {
-            return false;
-        }
-
-        int result = mEncoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
-        switch (result) {
-            case MediaCodec.INFO_TRY_AGAIN_LATER:
-                return false;
-            case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
-                MediaFormat actualFormat = mEncoder.getOutputFormat();
-                mOutputTrackId = mMuxer.addTrack(actualFormat);
-                mMuxer.start();
-                return true;
-            case MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED:
-                return true;
-        }
-        Log.e(TAG, "time in encoder " + mBufferInfo.presentationTimeUs);
-        if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-            Log.e(TAG, "time in encoder is done");
-            isEncodeDone = true;
-            isAllDone = true;
-            mBufferInfo.set(0, 0, 0, mBufferInfo.flags);
-        }
-        if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
-            mEncoder.releaseOutputBuffer(result, false);
-            return true;
-        }
-        mMuxer.writeSampleData(mOutputTrackId, mEncoder.getOutputBuffer(result), mBufferInfo);
-        mEncoder.releaseOutputBuffer(result, false);
-        return true;
-    }
-
-
-    private boolean drainDecoder() {
-        if (isDecodeDone) {
-            Log.e(TAG, "on decoder done");
-            return false;
-        }
-        int result = mDecoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
-        switch (result) {
-            case MediaCodec.INFO_TRY_AGAIN_LATER:
-                Log.e(TAG, "no decoder input buffer " + result);
-                return false;
-            case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
-                Log.e(TAG, "decoder on formate change " + mDecoder.getOutputFormat());
-                return true;
-            case MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED:
-                return true;
-        }
-        if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-            Log.e(TAG, "time in decoder is done");
-            isDecodeDone = true;
-        }
-        if (mBufferInfo.size >= 0) {
-            mPollIndex = result;
-//            feedEncoder();
-            Log.e(TAG, "time in decoder " + mBufferInfo.presentationTimeUs);
-            return false;
-        }
-        return true;
-    }
-
-
-    private boolean feedEncoder() {
-        if (mPollIndex == -1) {
-            return false;
-        }
-        int encoderInputIndex = mEncoder.dequeueInputBuffer(TIMEOUT_USEC);
-        if (encoderInputIndex < 0) {
-            Log.e(TAG, "time in feed no valid");
-            return false;
-        }
-        ByteBuffer inputBuffer = mEncoder.getInputBuffer(encoderInputIndex);
-        int size = mBufferInfo.size;
-        long presentationTime = mBufferInfo.presentationTimeUs;
-        if (size >= 0) {
-            Log.e(TAG, "time in feed " + mBufferInfo.presentationTimeUs);
-            ByteBuffer decodedBuffer = mDecoder.getOutputBuffer(mPollIndex).duplicate();
-            decodedBuffer.position(mBufferInfo.offset);
-            decodedBuffer.limit(mBufferInfo.offset + mBufferInfo.size);
-
-            inputBuffer.clear();
-            inputBuffer.put(decodedBuffer);
-
-            mEncoder.queueInputBuffer(encoderInputIndex, 0, size, presentationTime, mBufferInfo.flags);
-
-        }
-        mDecoder.releaseOutputBuffer(mPollIndex, false);
-        mPollIndex = -1;
-        return false;
     }
 }

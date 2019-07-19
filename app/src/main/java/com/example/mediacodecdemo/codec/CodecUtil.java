@@ -98,6 +98,16 @@ public class CodecUtil {
         return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
     }
 
+    /**
+     * Trans yuv data to a bitmap and save to local.
+     *
+     * @param size
+     * @param byteBuffer
+     * @param width
+     * @param height
+     * @param fileName
+     * @param isInput
+     */
     public static void saveBitmap(int size, ByteBuffer byteBuffer, int width, int height, String fileName, boolean isInput) {
         byte[] array = new byte[size];
         byteBuffer.get(array);
@@ -122,9 +132,82 @@ public class CodecUtil {
         } catch (IOException e) {
             e.printStackTrace();
 
-        }finally {
+        } finally {
             bitmap.recycle();
             Log.e("ReverseShortVideo", " bitmap is save");
+        }
+    }
+
+    /**
+     * NV21 To NV12
+     *
+     * @param nv21
+     * @param nv12
+     * @param width
+     * @param height
+     */
+    public static void swapNV21ToNV12(byte[] nv21, byte[] nv12, int width, int height) {
+        if (nv21 == null || nv12 == null) return;
+        int framesize = width * height;
+        int i = 0, j = 0;
+        System.arraycopy(nv21, 0, nv12, 0, framesize);
+        for (j = 0; j < framesize / 2; j += 2) {
+            nv12[framesize + j + 1] = nv21[j + framesize];
+        }
+
+        for (j = 0; j < framesize / 2; j += 2) {
+            nv12[framesize + j] = nv21[j + framesize + 1];
+        }
+    }
+
+    /**
+     * YV12 To I420
+     * @param yv12bytes
+     * @param i420bytes
+     * @param width
+     * @param height
+     */
+    public static void swapYV12toI420(byte[] yv12bytes, byte[] i420bytes, int width, int height) {
+        System.arraycopy(yv12bytes, 0, i420bytes, 0, width * height);
+        System.arraycopy(yv12bytes, width * height + width * height / 4, i420bytes, width * height, width * height / 4);
+        System.arraycopy(yv12bytes, width * height, i420bytes, width * height + width * height / 4, width * height / 4);
+    }
+
+
+    /**
+     * YV12 To NV12
+     * @param yv12bytes
+     * @param nv12bytes
+     * @param width
+     * @param height
+     */
+    public static void swapYV12toNV12(byte[] yv12bytes, byte[] nv12bytes, int width,int height) {
+        int nLenY = width * height;
+        int nLenU = nLenY / 4;
+
+        System.arraycopy(yv12bytes, 0, nv12bytes, 0, width * height);
+        for (int i = 0; i < nLenU; i++) {
+            nv12bytes[nLenY + 2 * i + 1] = yv12bytes[nLenY + i];
+            nv12bytes[nLenY + 2 * i] = yv12bytes[nLenY + nLenU + i];
+        }
+    }
+
+
+    /**
+     * NV12 TO I420
+     * @param nv12bytes
+     * @param i420bytes
+     * @param width
+     * @param height
+     */
+    public static void swapNV12toI420(byte[] nv12bytes, byte[] i420bytes, int width,int height) {
+        int nLenY = width * height;
+        int nLenU = nLenY / 4;
+
+        System.arraycopy(nv12bytes, 0, i420bytes, 0, width * height);
+        for (int i = 0; i < nLenU; i++) {
+            i420bytes[nLenY + i] = nv12bytes[nLenY + 2 * i + 1];
+            i420bytes[nLenY + nLenU + i] = nv12bytes[nLenY + 2 * i];
         }
     }
 }
