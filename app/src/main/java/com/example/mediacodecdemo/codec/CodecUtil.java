@@ -88,7 +88,7 @@ public class CodecUtil {
         }
     }
 
-    public static Bitmap yuvToBitma(int size, ByteBuffer byteBuffer, int width, int height) {
+    public static Bitmap yuvToBitmap(int size, ByteBuffer byteBuffer, int width, int height) {
         byte[] array = new byte[size];
         byteBuffer.get(array);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -141,6 +141,7 @@ public class CodecUtil {
 
     /**
      * YV12 To I420
+     *
      * @param yv12bytes
      * @param i420bytes
      * @param width
@@ -154,12 +155,13 @@ public class CodecUtil {
 
     /**
      * YV12 To NV12
+     *
      * @param yv12bytes
      * @param nv12bytes
      * @param width
      * @param height
      */
-    public static void swapYV12toNV12(byte[] yv12bytes, byte[] nv12bytes, int width,int height) {
+    public static void swapYV12toNV12(byte[] yv12bytes, byte[] nv12bytes, int width, int height) {
         int nLenY = width * height;
         int nLenU = nLenY / 4;
 
@@ -169,8 +171,10 @@ public class CodecUtil {
             nv12bytes[nLenY + 2 * i] = yv12bytes[nLenY + nLenU + i];
         }
     }
+
     /**
      * YV12 TO NV21
+     *
      * @param input
      * @param output
      * @param width
@@ -192,45 +196,47 @@ public class CodecUtil {
 
     /**
      * NV12 TO yuv420p
+     *
      * @param nv12
      * @param yuv420p
      * @param width
      * @param height
      */
-    public static void swapNV12ToYuv420P(byte[] nv12,byte[] yuv420p,int width,int height) {
+    public static void swapNV12ToYuv420P(byte[] nv12, byte[] yuv420p, int width, int height) {
 
         int ySize = width * height;
 
         int i, j;
 
         //y
-        for (i =0; i < ySize; i++) {
+        for (i = 0; i < ySize; i++) {
             yuv420p[i] = nv12[i];
         }
 
         //u
-        i =0;
-        for (j =0; j < ySize /2; j +=2) {
+        i = 0;
+        for (j = 0; j < ySize / 2; j += 2) {
             yuv420p[ySize + i] = nv12[ySize + j];
             i++;
         }
 
         //v
-        i =0;
-        for (j =1; j < ySize /2; j+=2) {
-            yuv420p[ySize *5 /4 + i] = nv12[ySize + j];
+        i = 0;
+        for (j = 1; j < ySize / 2; j += 2) {
+            yuv420p[ySize * 5 / 4 + i] = nv12[ySize + j];
             i++;
         }
     }
-    
+
     /**
      * NV12 TO I420
+     *
      * @param nv12bytes
      * @param i420bytes
      * @param width
      * @param height
      */
-    public static void swapNV12toI420(byte[] nv12bytes, byte[] i420bytes, int width,int height) {
+    public static void swapNV12toI420(byte[] nv12bytes, byte[] i420bytes, int width, int height) {
         int nLenY = width * height;
         int nLenU = nLenY / 4;
 
@@ -242,9 +248,9 @@ public class CodecUtil {
     }
 
 
-
     /**
      * I420 TO NV21
+     *
      * @param input
      * @param output
      * @param width
@@ -265,29 +271,30 @@ public class CodecUtil {
 
     /**
      * NV21 TO NV12
+     *
      * @param nv21
      * @param nv12
      * @param width
      * @param height
      */
-    public static void swapNV21ToNV12(byte[] nv21,byte[] nv12,int width,int height) {
-        if (nv21 ==null || nv12 ==null)return;
+    public static void swapNV21ToNV12(byte[] nv21, byte[] nv12, int width, int height) {
+        if (nv21 == null || nv12 == null) return;
 
         int framesize = width * height;
-        int i =0, j =0;
+        int i = 0, j = 0;
 
-        System.arraycopy(nv21,0, nv12,0, framesize);
+        System.arraycopy(nv21, 0, nv12, 0, framesize);
 
-        for (i =0; i < framesize; i++) {
+        for (i = 0; i < framesize; i++) {
             nv12[i] = nv21[i];
         }
 
-        for (j =0; j < framesize /2; j +=2) {
-            nv12[framesize + j -1] = nv21[j + framesize];
+        for (j = 0; j < framesize / 2; j += 2) {
+            nv12[framesize + j - 1] = nv21[j + framesize];
         }
 
-        for (j =0; j < framesize /2; j +=2) {
-            nv12[framesize + j] = nv21[j + framesize -1];
+        for (j = 0; j < framesize / 2; j += 2) {
+            nv12[framesize + j] = nv21[j + framesize - 1];
         }
     }
 }
