@@ -162,7 +162,7 @@ public class ReverseVideo {
                 // We need to calculate the time for reverse
                 long presentationTime = mExtractor.getSampleTime();
                 if (size != -1 && presentationTime != -1) {
-                    if (presentationTime < endTime){
+                    if (presentationTime < endTime || presentationTime == mVideoDuration){
                         Log.e(TAG, "decoder input valid presentTime " + presentationTime + " size " + size + " flag " + mExtractor.getSampleFlags());
                         decoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
                         mExtractor.advance();

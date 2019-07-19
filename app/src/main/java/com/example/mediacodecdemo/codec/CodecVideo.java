@@ -177,47 +177,7 @@ public class CodecVideo {
         Log.i(tag, logBuffer.toString() + "}");
     }
 
-    /**
-     * NV21TONV12
-     *
-     * @param nv21
-     * @param nv12
-     * @param width
-     * @param height
-     */
-    private void NV21ToNV12(byte[] nv21, byte[] nv12, int width, int height) {
-        if (nv21 == null || nv12 == null) return;
-        int framesize = width * height;
-        int i = 0, j = 0;
-        System.arraycopy(nv21, 0, nv12, 0, framesize);
-        for (i = 0; i < framesize; i++) {
-            nv12[i] = nv21[i];
-        }
-        for (j = 0; j < framesize / 2; j += 2) {
-            nv12[framesize + j - 1] = nv21[j + framesize];
-        }
-        for (j = 0; j < framesize / 2; j += 2) {
-            nv12[framesize + j] = nv21[j + framesize - 1];
-        }
-    }
-
-
-    public byte[] nv21ToI420(byte[] data, byte[] ret, int width, int height) {
-        int total = width * height;
-
-        ByteBuffer bufferY = ByteBuffer.wrap(ret, 0, total);
-        ByteBuffer bufferU = ByteBuffer.wrap(ret, total, total / 4);
-        ByteBuffer bufferV = ByteBuffer.wrap(ret, total + total / 4, total / 4);
-
-        bufferY.put(data, 0, total);
-        for (int i=total; i<data.length; i+=2) {
-            bufferV.put(data[i]);
-            bufferU.put(data[i+1]);
-        }
-
-        return ret;
-    }
-
+    int count = 0;
     private void doEncoderDecodeVideoFromBuffer() throws IOException {
         boolean isAllDone = false;
         boolean isExtractorDone = false;
@@ -240,7 +200,7 @@ public class CodecVideo {
                 int size = mExtractor.readSampleData(decodeInputBuffer, 0);
                 long presentationTime = mExtractor.getSampleTime();
                 if (size != -1 && presentationTime != -1) {
-                    Log.e(TAG, "decoder input is valide " + size + " time " + presentationTime);
+                    Log.e(TAG, "decoder input is valid " + size + " time " + presentationTime);
                     mDecoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
                 }
                 isExtractorDone = !mExtractor.advance();
@@ -282,28 +242,31 @@ public class CodecVideo {
                     long presentationTime = mBufferInfo.presentationTimeUs;
                     if (size >= 0) {
                         Log.e(TAG, "encoder input buffer size " + size + " time " + presentationTime + " flags " + mBufferInfo.flags);
-                        ByteBuffer decoderOutputBuffer = mDecoder.getOutputBuffer(result);
+                        ByteBuffer decoderOutputBuffer = mDecoder.getOutputBuffer(result).duplicate();
 
-                        byte[] original = new byte[decoderOutputBuffer.limit()];
-                        decoderOutputBuffer.get(original);
 
-                        byte[] trans = new byte[decoderOutputBuffer.limit()];
-                        if((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0) {
-                            nv21ToI420(original, trans, mWidth, mHeight);
-                        }else {
-                            decoderOutputBuffer.get(trans);
-                        }
-//                        decoderOutputBuffer.get(array);
-//                        showByteHexArrayLog(TAG, "byteBuffer", array, 96);
+//                        CodecUtil.saveBitmap(decoderOutputBuffer.limit(), decoderOutputBuffer, mWidth, mHeight, String.format("%2d.jpg", count), true);
+//                        count++;
+
+                        // For trans buffer format
+//                        byte[] original = new byte[decoderOutputBuffer.limit()];
+//                        decoderOutputBuffer.get(original);
+//                        byte[] trans = new byte[decoderOutputBuffer.limit()];
+//                        if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0) {
+//                            CodecUtil.swapYV12toI420(original, trans, mWidth, mHeight);
+//                        } else {
+//                            decoderOutputBuffer.get(trans);
+//                        }
 
                         decoderOutputBuffer.position(mBufferInfo.offset);
                         decoderOutputBuffer.limit(mBufferInfo.offset + size);
                         encoderInputBuffer.clear();
-                        encoderInputBuffer.put(trans);
+                        encoderInputBuffer.put(decoderOutputBuffer);
+                        Log.e(TAG," Offset " + mBufferInfo.offset + " size " + mBufferInfo.size + " decoder.position " + decoderOutputBuffer.position() + " decoder.size " + decoderOutputBuffer.limit() + " encoder.position " + encoderInputBuffer.position() + " encoder.limit " + encoderInputBuffer.limit());
 
                         mEncoder.queueInputBuffer(
                                 encoderInputBufferIndex,
-                                0,
+                                mBufferInfo.offset,
                                 size,
                                 presentationTime,
                                 mBufferInfo.flags
@@ -349,6 +312,7 @@ public class CodecVideo {
                 if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                     isEncodeDone = true;
                     isAllDone = true;
+                    count = 0;
                 }
                 mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
             }
