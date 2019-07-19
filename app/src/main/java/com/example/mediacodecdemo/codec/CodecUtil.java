@@ -153,6 +153,44 @@ public class CodecUtil {
     }
 
     /**
+     * YV12 To NV12
+     * @param yv12bytes
+     * @param nv12bytes
+     * @param width
+     * @param height
+     */
+    public static void swapYV12toNV12(byte[] yv12bytes, byte[] nv12bytes, int width,int height) {
+        int nLenY = width * height;
+        int nLenU = nLenY / 4;
+
+        System.arraycopy(yv12bytes, 0, nv12bytes, 0, width * height);
+        for (int i = 0; i < nLenU; i++) {
+            nv12bytes[nLenY + 2 * i + 1] = yv12bytes[nLenY + i];
+            nv12bytes[nLenY + 2 * i] = yv12bytes[nLenY + nLenU + i];
+        }
+    }
+    /**
+     * YV12 TO NV21
+     * @param input
+     * @param output
+     * @param width
+     * @param height
+     */
+    public static void swapYV12toNV21(final byte[] input, final byte[] output, final int width, final int height) {
+        final int frameSize = width * height;
+        final int qFrameSize = frameSize / 4;
+        final int tempFrameSize = frameSize * 5 / 4;
+
+        System.arraycopy(input, 0, output, 0, frameSize); // Y
+
+        for (int i = 0; i < qFrameSize; i++) {
+            output[frameSize + i * 2] = input[frameSize + i]; // Cb (U)
+            output[frameSize + i * 2 + 1] = input[tempFrameSize + i]; // Cr (V)
+        }
+    }
+
+
+    /**
      * NV12 TO yuv420p
      * @param nv12
      * @param yuv420p
@@ -184,24 +222,7 @@ public class CodecUtil {
             i++;
         }
     }
-    /**
-     * YV12 To NV12
-     * @param yv12bytes
-     * @param nv12bytes
-     * @param width
-     * @param height
-     */
-    public static void swapYV12toNV12(byte[] yv12bytes, byte[] nv12bytes, int width,int height) {
-        int nLenY = width * height;
-        int nLenU = nLenY / 4;
-
-        System.arraycopy(yv12bytes, 0, nv12bytes, 0, width * height);
-        for (int i = 0; i < nLenU; i++) {
-            nv12bytes[nLenY + 2 * i + 1] = yv12bytes[nLenY + i];
-            nv12bytes[nLenY + 2 * i] = yv12bytes[nLenY + nLenU + i];
-        }
-    }
-
+    
     /**
      * NV12 TO I420
      * @param nv12bytes
@@ -220,25 +241,7 @@ public class CodecUtil {
         }
     }
 
-    /**
-     * YV12 TO NV21
-     * @param input
-     * @param output
-     * @param width
-     * @param height
-     */
-    public static void swapYV12toNV21(final byte[] input, final byte[] output, final int width, final int height) {
-        final int frameSize = width * height;
-        final int qFrameSize = frameSize / 4;
-        final int tempFrameSize = frameSize * 5 / 4;
 
-        System.arraycopy(input, 0, output, 0, frameSize); // Y
-
-        for (int i = 0; i < qFrameSize; i++) {
-            output[frameSize + i * 2] = input[frameSize + i]; // Cb (U)
-            output[frameSize + i * 2 + 1] = input[tempFrameSize + i]; // Cr (V)
-        }
-    }
 
     /**
      * I420 TO NV21

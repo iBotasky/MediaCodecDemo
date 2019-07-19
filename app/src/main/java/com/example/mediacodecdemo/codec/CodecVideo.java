@@ -24,7 +24,7 @@ public class CodecVideo {
     private static final int OUTPUT_VIDEO_FRAME_RATE = 30;          // 25 fps
     private static final int OUTPUT_VIDEO_IFRAME_INTERVAL = 10;     // 10 seconds between I-Frames
     private static final int OUTPUT_VIDEO_COLOR_FORMAT =
-            MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface; // MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar is deprecated
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedSemiPlanar; // MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar is deprecated
 
 
     /**
@@ -109,10 +109,6 @@ public class CodecVideo {
             // Create muxer
             mMuxer = new MediaMuxer(outputVideoFile, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
 
-            doExtractorKeyFramesTime();
-            mExtractor.unselectTrack(videoTrackIndex);
-
-            mExtractor.selectTrack(videoTrackIndex);
             doEncoderDecodeVideoFromBuffer();
         } catch (IOException e) {
             e.printStackTrace();
@@ -216,6 +212,7 @@ public class CodecVideo {
                     break;
                 }
                 int result = mDecoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
+
                 if (result == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     Log.e(TAG, "decoder output no buffer valid");
                     break;
@@ -248,12 +245,12 @@ public class CodecVideo {
 //                        CodecUtil.saveBitmap(decoderOutputBuffer.limit(), decoderOutputBuffer, mWidth, mHeight, String.format("%2d.jpg", count), true);
 //                        count++;
 
-                        // For trans buffer format
+//                        // For trans buffer format
 //                        byte[] original = new byte[decoderOutputBuffer.limit()];
 //                        decoderOutputBuffer.get(original);
 //                        byte[] trans = new byte[decoderOutputBuffer.limit()];
 //                        if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0) {
-//                            CodecUtil.swapYV12toI420(original, trans, mWidth, mHeight);
+//                            CodecUtil.swapNV12toI420(original, trans, mWidth, mHeight);
 //                        } else {
 //                            decoderOutputBuffer.get(trans);
 //                        }
@@ -277,7 +274,6 @@ public class CodecVideo {
                         Log.e(TAG, "video decoder done");
                         isDecodeDone = true;
                     }
-                    break;
                 }
             }
             // Encoder
