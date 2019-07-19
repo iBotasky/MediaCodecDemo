@@ -25,7 +25,7 @@ public class ReverseVideo {
     private static final int OUTPUT_VIDEO_FRAME_RATE = 30;          // 25 fps
     private static final int OUTPUT_VIDEO_IFRAME_INTERVAL = 10;     // 10 seconds between I-Frames
     private static final int OUTPUT_VIDEO_COLOR_FORMAT =
-            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedSemiPlanar; // MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar is deprecated
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface; // MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar is deprecated
 
 
     /**
@@ -44,12 +44,10 @@ public class ReverseVideo {
     private int mColorFormat;
 
     private long mVideoDuration = 0;
-    private long mReverseEndTime = 0;
 
 
     private int mOutputTrackId = -1;
 
-    private ArrayList<Long> mKeyFramesTime = new ArrayList<>();
 
     public ReverseVideo(String inputVideoFile, String outputVideoFile) {
         this.inputVideoFile = inputVideoFile;
@@ -79,13 +77,6 @@ public class ReverseVideo {
                 return;
             }
             mColorFormat = CodecUtil.selectColorFormat(videoCodecInfo, MIME_TYPE);
-            Log.e(TAG, "ColorFormat for encoder " + mColorFormat);
-            
-            if (videoInputFormat.containsKey(MediaFormat.KEY_COLOR_FORMAT)){
-                Log.e(TAG, "ColorFormat for decoder " + videoInputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT));
-            }else {
-                Log.e(TAG, "ColorFormat for decoder is not valid");
-            }
             // We avoid the device-specific limitations on width and height by using values that
             // are multiples of 16, which all tested devices seem to be able to handle.
             MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, mWidth, mHeight);
@@ -106,7 +97,6 @@ public class ReverseVideo {
             mMuxer = new MediaMuxer(outputVideoFile, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
 
             ArrayList<Long> keyFrameTimes = getKeyFramesTime();
-            mReverseEndTime = keyFrameTimes.get(keyFrameTimes.size() - 2);
 
             for (int i = 1; i < keyFrameTimes.size(); i++) {
                 doReverseForEverySlice(videoInputFormat, keyFrameTimes.get(i), keyFrameTimes.get(i - 1));
@@ -134,6 +124,7 @@ public class ReverseVideo {
 
     private Stack<byte[]> byteBuffers = new Stack<>();
     private Stack<MediaCodec.BufferInfo> bufferInfos = new Stack<>();
+
 
     /**
      * Do save buffer for every slice
@@ -171,7 +162,7 @@ public class ReverseVideo {
                 // We need to calculate the time for reverse
                 long presentationTime = mExtractor.getSampleTime();
                 if (size != -1 && presentationTime != -1) {
-                    if (presentationTime < endTime || endTime == mVideoDuration){//here we consider the last frame at the end.
+                    if (presentationTime < endTime){
                         Log.e(TAG, "decoder input valid presentTime " + presentationTime + " size " + size + " flag " + mExtractor.getSampleFlags());
                         decoder.queueInputBuffer(decoderInputIndex, 0, size, presentationTime, mExtractor.getSampleFlags());
                         mExtractor.advance();
@@ -207,12 +198,10 @@ public class ReverseVideo {
                 if (((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0) && info.size >= 0 && result >= 0) {
                     // save the decode buffer, Here we use the array to save, not the buffer.duplicate(), because it's just point to the them address
                     ByteBuffer decodedOutputBuffer = decoder.getOutputBuffer(result);
-                    Log.e(TAG, "bytebuffer info limit " + decodedOutputBuffer.limit() +  " buffer.position " + decodedOutputBuffer.position() +  " remaining " + decodedOutputBuffer.remaining() + " infosize " + info.size);
                     info.presentationTimeUs = mVideoDuration - info.presentationTimeUs;
                     Log.e(TAG, "save the decoder buffer new Time " + info.presentationTimeUs);
                     byte[] array = new byte[decodedOutputBuffer.limit()];
                     decodedOutputBuffer.get(array);
-                    showByteHexArrayLog(TAG, " bytebuffer", array, 96);
                     byteBuffers.push(array);
                     bufferInfos.push(info);
                 }
@@ -313,6 +302,7 @@ public class ReverseVideo {
     }
 
 
+
     /**
      * Get the time of the key frame.
      * And we add the last position for video duration.
@@ -338,27 +328,5 @@ public class ReverseVideo {
             Log.e(TAG, " time is " + i);
         }
         return keyFrameTimes;
-    }
-
-
-    public static void showByteHexArrayLog(String tag, String log, byte[] data, int lineNumber) {
-        StringBuilder logBuffer = new StringBuilder();
-        logBuffer.append(log + "\n{");
-        for (int i = 0; i < data.length; i++) {
-            logBuffer.append(String.format("%02x", data[i]));
-            if (i < data.length - 1) {
-                logBuffer.append(", ");
-            }
-            if (i % lineNumber == lineNumber - 1) {
-                logBuffer.append("\n");
-                if (logBuffer.length() >= 2000){
-                    Log.i(tag, "" + logBuffer.toString());
-                    logBuffer = new StringBuilder();
-                }
-            }
-
-        }
-        logBuffer.delete(logBuffer.length(), logBuffer.length());
-        Log.i(tag, logBuffer.toString() + "}");
     }
 }
