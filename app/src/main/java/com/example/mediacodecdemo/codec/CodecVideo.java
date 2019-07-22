@@ -222,9 +222,9 @@ public class CodecVideo {
                 } else if (result == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
                     break;
                 }
-                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                    isDecodeDone = true;
-                }
+//                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+//                    isDecodeDone = true;
+//                }
                 Log.e(TAG, "encoder feed with result " + result);
                 if (mBufferInfo.size >= 0 && result >= 0) {
                     //feed the encoder
