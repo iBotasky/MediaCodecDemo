@@ -4,6 +4,7 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.example.mediacodecdemo.codec.CodecVideo;
@@ -36,8 +37,18 @@ public class DecodeEncodeActivity extends AppCompatActivity {
                     @Override
                     public void run() {
                         try {
-                            new EncodeDecodeTest().testEncodeDecodeVideoFromBufferToBuffer720p();
-                            new CodecVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
+//                            new EncodeDecodeTest().testEncodeDecodeVideoFromBufferToBuffer720p();
+                            new CodecVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE, new CodecVideo.CodecListener() {
+                                @Override
+                                public void onFinish() {
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            Toast.makeText(DecodeEncodeActivity.this, " Codec is Finish", Toast.LENGTH_SHORT).show();
+                                        }
+                                    });
+                                }
+                            });
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
@@ -46,18 +57,6 @@ public class DecodeEncodeActivity extends AppCompatActivity {
             }
         });
 
-
-        findViewById(R.id.mediaReverseCodec).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                AsyncTask.THREAD_POOL_EXECUTOR.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        new ReverseShortVideo(INPUT_VIDEO_FILE, OUTPUT_VIDEO_FILE);
-                    }
-                });
-            }
-        });
 
         findViewById(R.id.longMediaReverseCodec).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -71,8 +70,6 @@ public class DecodeEncodeActivity extends AppCompatActivity {
             }
         });
     }
-
-
 
 
 }

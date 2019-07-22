@@ -1,8 +1,11 @@
 package com.example.mediacodecdemo.codec;
 
+import android.graphics.BitmapFactory;
 import android.media.*;
+import android.os.Environment;
 import android.util.Log;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -39,26 +42,21 @@ public class CodecVideo {
 
     private String inputVideoFile;
     private String outputVideoFile;
+    private CodecListener listener;
     private int mWidth;
     private int mHeight;
     private int mColorFormat;
 
-    private boolean isEndcoderEOS = false;
-    private boolean isDecodeDone = false;
-    private boolean isEncodeDone = false;
-    private boolean isAllDone = false;
-    private long mWrittenPresentationTimeUs = 0;
-
     private int mOutputTrackId = -1;
 
-    private int mPollIndex = -1;
 
     private ArrayList<Long> mKeyFramesTime = new ArrayList<>();
 
 
-    public CodecVideo(String inputVideoFile, String outputVideoFile) {
+    public CodecVideo(String inputVideoFile, String outputVideoFile, CodecListener listener) {
         this.inputVideoFile = inputVideoFile;
         this.outputVideoFile = outputVideoFile;
+        this.listener = listener;
         init();
     }
 
@@ -91,14 +89,15 @@ public class CodecVideo {
             MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, mWidth, mHeight);
             // Set some properties.  Failing to specify some of these can cause the MediaCodec
             // configure() call to throw an unhelpful exception.
-            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, mColorFormat);
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible);
             format.setInteger(MediaFormat.KEY_BIT_RATE, OUTPUT_VIDEO_BIT_RATE);
             format.setInteger(MediaFormat.KEY_FRAME_RATE, OUTPUT_VIDEO_FRAME_RATE);
-            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, OUTPUT_VIDEO_IFRAME_INTERVAL);
+            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 0);
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, mWidth * mHeight * 4);
             Log.e(TAG, "format: " + format);
             // Create Encoder
-            mEncoder = MediaCodec.createEncoderByType(format.getString(MediaFormat.KEY_MIME));
+//            mEncoder = MediaCodec.createEncoderByType(format.getString(MediaFormat.KEY_MIME));
+            mEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
             mEncoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             mEncoder.start();
             // Create Decoder
@@ -130,25 +129,8 @@ public class CodecVideo {
             if (mExtractor != null) {
                 mExtractor.release();
             }
-        }
-    }
 
-    private void doExtractorKeyFramesTime() {
-        boolean isGetKeyFrameTimesEnd = false;
-        while (!isGetKeyFrameTimesEnd) {
-            if ((mExtractor.getSampleFlags() & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0) {
-                Log.e(TAG, "This is an key frame");
-                if (mExtractor.getSampleTime() != -1) {
-                    mKeyFramesTime.add(mExtractor.getSampleTime());
-                }
-            } else {
-                Log.e(TAG, "This is not an key frame");
-            }
-            isGetKeyFrameTimesEnd = !mExtractor.advance();
-        }
-        Collections.reverse(mKeyFramesTime);
-        for (Long i : mKeyFramesTime) {
-            Log.e(TAG, " time is " + i);
+            listener.onFinish();
         }
     }
 
@@ -174,6 +156,7 @@ public class CodecVideo {
     }
 
     int count = 0;
+
     private void doEncoderDecodeVideoFromBuffer() throws IOException {
         boolean isAllDone = false;
         boolean isExtractorDone = false;
@@ -220,11 +203,10 @@ public class CodecVideo {
                     Log.e(TAG, "decoder output change " + mDecoder.getOutputFormat());
                     continue;
                 } else if (result == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    mDecoder.getOutputBuffers();
                     break;
                 }
-//                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-//                    isDecodeDone = true;
-//                }
+
                 Log.e(TAG, "encoder feed with result " + result);
                 if (mBufferInfo.size >= 0 && result >= 0) {
                     //feed the encoder
@@ -237,44 +219,44 @@ public class CodecVideo {
                     ByteBuffer encoderInputBuffer = mEncoder.getInputBuffer(encoderInputBufferIndex);
                     int size = mBufferInfo.size;
                     long presentationTime = mBufferInfo.presentationTimeUs;
-                    if (size >= 0) {
-                        Log.e(TAG, "encoder input buffer size " + size + " time " + presentationTime + " flags " + mBufferInfo.flags);
-                        ByteBuffer decoderOutputBuffer = mDecoder.getOutputBuffer(result).duplicate();
+                    Log.e(TAG, "encoder input buffer size " + size + " time " + presentationTime + " flags " + mBufferInfo.flags);
+                    ByteBuffer decoderOutputBuffer = mDecoder.getOutputBuffer(result).duplicate();
 
-
-//                        CodecUtil.saveBitmap(decoderOutputBuffer.limit(), decoderOutputBuffer, mWidth, mHeight, String.format("%2d.jpg", count), true);
-//                        count++;
-
-//                        // For trans buffer format
-//                        byte[] original = new byte[decoderOutputBuffer.limit()];
-//                        decoderOutputBuffer.get(original);
-//                        byte[] trans = new byte[decoderOutputBuffer.limit()];
-//                        if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0) {
-//                            CodecUtil.swapNV12toI420(original, trans, mWidth, mHeight);
-//                        } else {
-//                            decoderOutputBuffer.get(trans);
-//                        }
-
-                        decoderOutputBuffer.position(mBufferInfo.offset);
-                        decoderOutputBuffer.limit(mBufferInfo.offset + size);
-                        encoderInputBuffer.clear();
-                        encoderInputBuffer.put(decoderOutputBuffer);
-                        Log.e(TAG," Offset " + mBufferInfo.offset + " size " + mBufferInfo.size + " decoder.position " + decoderOutputBuffer.position() + " decoder.size " + decoderOutputBuffer.limit() + " encoder.position " + encoderInputBuffer.position() + " encoder.limit " + encoderInputBuffer.limit());
-
-                        mEncoder.queueInputBuffer(
-                                encoderInputBufferIndex,
-                                mBufferInfo.offset,
-                                size,
-                                presentationTime,
-                                mBufferInfo.flags
-                        );
+                    /* Save decoder image.
+                     */
+                    Image image = mDecoder.getOutputImage(result);
+                    String fileDir = Environment.getExternalStorageDirectory().getPath() + File.separator + "ZDecoder";
+                    File theDir = new File(fileDir);
+                    if (!theDir.exists()) {
+                        theDir.mkdirs();
+                    } else if (!theDir.isDirectory()) {
+                        throw new IOException("Not a directory");
                     }
-                    mDecoder.releaseOutputBuffer(result, false);
-                    if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                        Log.e(TAG, "video decoder done");
-                        isDecodeDone = true;
-                    }
+                    String fileName = fileDir + File.separator + String.format("%03d.jpg", count);
+                    CodecUtil.compressToJpeg(fileName, image);
+
+                    byte[] array = ColorUtil.Companion.getNV12(mWidth, mHeight, BitmapFactory.decodeFile(fileName));
+                    count++;
+
+
+
+                    decoderOutputBuffer.position(mBufferInfo.offset);
+                    decoderOutputBuffer.limit(mBufferInfo.offset + size);
+                    encoderInputBuffer.clear();
+                    encoderInputBuffer.put(array);
+                    mEncoder.queueInputBuffer(
+                            encoderInputBufferIndex,
+                            0,
+                            size,
+                            presentationTime,
+                            mBufferInfo.flags
+                    );
                 }
+                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                    Log.e(TAG, "video decoder done");
+                    isDecodeDone = true;
+                }
+                mDecoder.releaseOutputBuffer(result, false);
             }
             // Encoder
             while (!isEncodeDone) {
@@ -292,10 +274,12 @@ public class CodecVideo {
                     mMuxer.start();
                     continue;
                 } else if (encoderOutputIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    mEncoder.getOutputBuffers();
                     break;
                 }
 
                 ByteBuffer encoderOutputBuffer = mEncoder.getOutputBuffer(encoderOutputIndex);
+
                 if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
                     mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
                     break;
@@ -304,14 +288,17 @@ public class CodecVideo {
                 if (mBufferInfo.size >= 0) {
                     mMuxer.writeSampleData(mOutputTrackId, encoderOutputBuffer, mBufferInfo);
                 }
-                Log.e(TAG, " mBuffer flags " + mBufferInfo.flags + " size " + mBufferInfo.size);
+                Log.e(TAG, " mBuffer flags " + mBufferInfo.flags + " size " + mBufferInfo.size + " time " + mBufferInfo.presentationTimeUs);
                 if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                     isEncodeDone = true;
                     isAllDone = true;
-                    count = 0;
                 }
                 mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
             }
         }
+    }
+
+    public interface CodecListener {
+        void onFinish();
     }
 }

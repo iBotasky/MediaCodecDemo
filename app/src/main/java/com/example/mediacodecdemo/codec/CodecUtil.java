@@ -1,10 +1,7 @@
 package com.example.mediacodecdemo.codec;
 
 import android.graphics.*;
-import android.media.MediaCodecInfo;
-import android.media.MediaCodecList;
-import android.media.MediaExtractor;
-import android.media.MediaFormat;
+import android.media.*;
 import android.os.Environment;
 import android.util.Log;
 
@@ -16,6 +13,8 @@ import java.nio.ByteBuffer;
  * Created by liangbo.su@ubnt on 2019-07-12
  */
 public class CodecUtil {
+    private static final int COLOR_FormatI420 = 1;
+    private static final int COLOR_FormatNV21 = 2;
     /**
      * Get the video track index from the extractor
      *
@@ -88,6 +87,104 @@ public class CodecUtil {
         }
     }
 
+
+    public static void compressToJpeg(String fileName, Image image) {
+        Log.e("CodecImage", " fileName " + fileName);
+        FileOutputStream outStream;
+        try {
+            outStream = new FileOutputStream(fileName);
+        } catch (IOException ioe) {
+            throw new RuntimeException("Unable to create output file " + fileName, ioe);
+        }
+        Rect rect = image.getCropRect();
+        YuvImage yuvImage = new YuvImage(getDataFromImage(image, COLOR_FormatNV21), ImageFormat.NV21, rect.width(), rect.height(), null);
+        yuvImage.compressToJpeg(rect, 100, outStream);
+    }
+
+    private static boolean isImageFormatSupported(Image image) {
+        int format = image.getFormat();
+        switch (format) {
+            case ImageFormat.YUV_420_888:
+            case ImageFormat.NV21:
+            case ImageFormat.YV12:
+                return true;
+        }
+        return false;
+    }
+
+    private static byte[] getDataFromImage(Image image, int colorFormat) {
+        if (colorFormat != COLOR_FormatI420 && colorFormat != COLOR_FormatNV21) {
+            throw new IllegalArgumentException("only support COLOR_FormatI420 " + "and COLOR_FormatNV21");
+        }
+        if (!isImageFormatSupported(image)) {
+            throw new RuntimeException("can't convert Image to byte array, format " + image.getFormat());
+        }
+        Rect crop = image.getCropRect();
+        int format = image.getFormat();
+        int width = crop.width();
+        int height = crop.height();
+        Image.Plane[] planes = image.getPlanes();
+        byte[] data = new byte[width * height * ImageFormat.getBitsPerPixel(format) / 8];
+        byte[] rowData = new byte[planes[0].getRowStride()];
+        int channelOffset = 0;
+        int outputStride = 1;
+        for (int i = 0; i < planes.length; i++) {
+            switch (i) {
+                case 0:
+                    channelOffset = 0;
+                    outputStride = 1;
+                    break;
+                case 1:
+                    if (colorFormat == COLOR_FormatI420) {
+                        channelOffset = width * height;
+                        outputStride = 1;
+                    } else if (colorFormat == COLOR_FormatNV21) {
+                        channelOffset = width * height + 1;
+                        outputStride = 2;
+                    }
+                    break;
+                case 2:
+                    if (colorFormat == COLOR_FormatI420) {
+                        channelOffset = (int) (width * height * 1.25);
+                        outputStride = 1;
+                    } else if (colorFormat == COLOR_FormatNV21) {
+                        channelOffset = width * height;
+                        outputStride = 2;
+                    }
+                    break;
+            }
+            ByteBuffer buffer = planes[i].getBuffer();
+            int rowStride = planes[i].getRowStride();
+            int pixelStride = planes[i].getPixelStride();
+            int shift = (i == 0) ? 0 : 1;
+            int w = width >> shift;
+            int h = height >> shift;
+            buffer.position(rowStride * (crop.top >> shift) + pixelStride * (crop.left >> shift));
+            for (int row = 0; row < h; row++) {
+                int length;
+                if (pixelStride == 1 && outputStride == 1) {
+                    length = w;
+                    buffer.get(data, channelOffset, length);
+                    channelOffset += length;
+                } else {
+                    length = (w - 1) * pixelStride + 1;
+                    buffer.get(rowData, 0, length);
+                    for (int col = 0; col < w; col++) {
+                        data[channelOffset] = rowData[col * pixelStride];
+                        channelOffset += outputStride;
+                    }
+                }
+                if (row < h - 1) {
+                    buffer.position(buffer.position() + rowStride - length);
+                }
+            }
+//            if (VERBOSE) Log.v(TAG, "Finished reading data from plane " + i);
+        }
+        return data;
+    }
+
+
+
     public static Bitmap yuvToBitmap(int size, ByteBuffer byteBuffer, int width, int height) {
         byte[] array = new byte[size];
         byteBuffer.get(array);
@@ -97,6 +194,7 @@ public class CodecUtil {
         byte[] imageBytes = out.toByteArray();
         return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
     }
+
 
     /**
      * Trans yuv data to a bitmap and save to local.
@@ -151,6 +249,11 @@ public class CodecUtil {
         System.arraycopy(yv12bytes, 0, i420bytes, 0, width * height);
         System.arraycopy(yv12bytes, width * height + width * height / 4, i420bytes, width * height, width * height / 4);
         System.arraycopy(yv12bytes, width * height, i420bytes, width * height + width * height / 4, width * height / 4);
+    }
+
+    public static void swapI420ToYv12(byte[] i420bytes, byte[] yv12bytes, int width, int height) {
+        System.arraycopy(i420bytes, 0, yv12bytes, 0, width * height);
+        System.arraycopy(i420bytes, width * height + width * height / 4, yv12bytes, width * height, width * height / 4);
     }
 
     /**
