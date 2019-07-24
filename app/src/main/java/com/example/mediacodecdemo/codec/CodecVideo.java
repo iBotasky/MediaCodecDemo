@@ -163,6 +163,44 @@ public class CodecVideo {
         boolean isDecodeDone = false;
         boolean isEncodeDone = false;
         while (!isAllDone) {
+            // Encoder 先做Encoder因为如果先做Decoder，放入Encoder，Encoder有可能是无法放入的状态。
+            while (!isEncodeDone) {
+                if (isEncodeDone) {
+                    break;
+                }
+                int encoderOutputIndex = mEncoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
+                if (encoderOutputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    Log.e(TAG, "encoder output is not valid");
+                    break;
+                } else if (encoderOutputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    MediaFormat acturalMeidaFormat = mEncoder.getOutputFormat();
+                    Log.e(TAG, "encoder output format change " + acturalMeidaFormat);
+                    mOutputTrackId = mMuxer.addTrack(acturalMeidaFormat);
+                    mMuxer.start();
+                    continue;
+                } else if (encoderOutputIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    mEncoder.getOutputBuffers();
+                    break;
+                }
+
+                ByteBuffer encoderOutputBuffer = mEncoder.getOutputBuffer(encoderOutputIndex).duplicate();
+
+                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                    mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
+                    break;
+                }
+
+                if (mBufferInfo.size >= 0) {
+                    mMuxer.writeSampleData(mOutputTrackId, encoderOutputBuffer, mBufferInfo);
+                }
+                Log.e(TAG, "mBuffer flags " + mBufferInfo.flags + " size " + mBufferInfo.size + " time " + mBufferInfo.presentationTimeUs);
+                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                    isEncodeDone = true;
+                    isAllDone = true;
+                }
+                mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
+            }
+
             // Extractor
             while (!isExtractorDone) {
                 if (isExtractorDone) {
@@ -207,13 +245,13 @@ public class CodecVideo {
                     break;
                 }
 
-                Log.e(TAG, "encoder feed with result " + result);
+                Log.e(TAG, "encoder feed with result " + result + " flag " + mBufferInfo.flags);
                 if (mBufferInfo.size >= 0 && result >= 0) {
                     //feed the encoder
                     int encoderInputBufferIndex = mEncoder.dequeueInputBuffer(TIMEOUT_USEC);
 
                     if (encoderInputBufferIndex <= MediaCodec.INFO_TRY_AGAIN_LATER) {
-                        Log.e(TAG, "encoder input is not valid");
+                        Log.e(TAG, "encoder input is not valid " + " flag " + mBufferInfo.flags);
                         break;
                     }
                     ByteBuffer encoderInputBuffer = mEncoder.getInputBuffer(encoderInputBufferIndex);
@@ -224,26 +262,25 @@ public class CodecVideo {
 
                     /* Save decoder image.
                      */
-                    Image image = mDecoder.getOutputImage(result);
-                    String fileDir = Environment.getExternalStorageDirectory().getPath() + File.separator + "ZDecoder";
-                    File theDir = new File(fileDir);
-                    if (!theDir.exists()) {
-                        theDir.mkdirs();
-                    } else if (!theDir.isDirectory()) {
-                        throw new IOException("Not a directory");
-                    }
-                    String fileName = fileDir + File.separator + String.format("%03d.jpg", count);
-                    CodecUtil.compressToJpeg(fileName, image);
-
-                    byte[] array = ColorUtil.Companion.getNV12(mWidth, mHeight, BitmapFactory.decodeFile(fileName));
-                    count++;
+//                    Image image = mDecoder.getOutputImage(result);
+//                    String fileDir = Environment.getExternalStorageDirectory().getPath() + File.separator + "ZDecoder";
+//                    File theDir = new File(fileDir);
+//                    if (!theDir.exists()) {
+//                        theDir.mkdirs();
+//                    } else if (!theDir.isDirectory()) {
+//                        throw new IOException("Not a directory");
+//                    }
+//                    String fileName = fileDir + File.separator + String.format("%03d.jpg", count);
+//                    CodecUtil.compressToJpeg(fileName, image);
+//                    byte[] array = ColorUtil.Companion.getNV12(mWidth, mHeight, BitmapFactory.decodeFile(fileName));
+//                    count++;
 
 
 
                     decoderOutputBuffer.position(mBufferInfo.offset);
                     decoderOutputBuffer.limit(mBufferInfo.offset + size);
                     encoderInputBuffer.clear();
-                    encoderInputBuffer.put(array);
+                    encoderInputBuffer.put(decoderOutputBuffer);
                     mEncoder.queueInputBuffer(
                             encoderInputBufferIndex,
                             0,
@@ -258,43 +295,7 @@ public class CodecVideo {
                 }
                 mDecoder.releaseOutputBuffer(result, false);
             }
-            // Encoder
-            while (!isEncodeDone) {
-                if (isEncodeDone) {
-                    break;
-                }
-                int encoderOutputIndex = mEncoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
-                if (encoderOutputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                    Log.e(TAG, "encoder output is not valid");
-                    break;
-                } else if (encoderOutputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    MediaFormat acturalMeidaFormat = mEncoder.getOutputFormat();
-                    Log.e(TAG, "encoder output format change " + acturalMeidaFormat);
-                    mOutputTrackId = mMuxer.addTrack(acturalMeidaFormat);
-                    mMuxer.start();
-                    continue;
-                } else if (encoderOutputIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
-                    mEncoder.getOutputBuffers();
-                    break;
-                }
 
-                ByteBuffer encoderOutputBuffer = mEncoder.getOutputBuffer(encoderOutputIndex);
-
-                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
-                    mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
-                    break;
-                }
-
-                if (mBufferInfo.size >= 0) {
-                    mMuxer.writeSampleData(mOutputTrackId, encoderOutputBuffer, mBufferInfo);
-                }
-                Log.e(TAG, " mBuffer flags " + mBufferInfo.flags + " size " + mBufferInfo.size + " time " + mBufferInfo.presentationTimeUs);
-                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                    isEncodeDone = true;
-                    isAllDone = true;
-                }
-                mEncoder.releaseOutputBuffer(encoderOutputIndex, false);
-            }
         }
     }
 

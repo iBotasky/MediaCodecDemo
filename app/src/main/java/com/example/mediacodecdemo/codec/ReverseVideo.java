@@ -95,6 +95,9 @@ public class ReverseVideo {
 
             // Create muxer
             mMuxer = new MediaMuxer(outputVideoFile, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            if (videoInputFormat.containsKey(MediaFormat.KEY_ROTATION)){
+                mMuxer.setOrientationHint(videoInputFormat.getInteger(MediaFormat.KEY_ROTATION));
+            }
 
             ArrayList<Long> keyFrameTimes = getKeyFramesTime();
 
